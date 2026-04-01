@@ -1,0 +1,1446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upstox Option Chain Tool (Multi-Order + Triggers + Persistence)</title> <!-- Title updated -->
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <style>
+        /* --- Keep previous CSS styles --- */
+        body { padding-top: 15px; padding-bottom: 20px; }
+        .log-area { height: 150px; background-color: #f8f9fa; border: 1px solid #dee2e6; font-family: monospace; font-size: 0.75rem; overflow-y: scroll; white-space: pre-wrap; word-wrap: break-word; margin-top: 15px; }
+        .table-sm th, .table-sm td { padding: 0.25rem 0.4rem; vertical-align: middle; font-size: 0.8rem; text-align: right; white-space: nowrap; }
+        .strike-col, .checkbox-col { text-align: center !important; font-weight: bold; }
+        .strike-col { background-color: #f8f9fa; }
+        .call-bg { background-color: rgba(25, 135, 84, 0.05); }
+        .put-bg { background-color: rgba(220, 53, 69, 0.05); }
+        .table-sm thead th { position: sticky; top: 0; background-color: #e9ecef; z-index: 10; }
+        .strike-highlight { background-color: #dee2e6 !important; font-weight: bold; }
+        #loadingIndicator { display: none; align-items: center; justify-content: center; } /* Added alignment */
+        .order-info { font-size: 0.85rem; color: #6c757d; }
+        .table-container { max-height: 55vh; overflow-y: auto; overflow-x: auto; border: 1px solid #dee2e6; }
+        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { opacity: 1; }
+        .form-label-sm { font-size: 0.9rem; margin-bottom: 0.2rem; }
+        .status-section { background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 10px; border-radius: 5px; margin-top: 10px; }
+        .status-section h6 { margin-bottom: 5px; }
+        .basket-display { font-size: 0.8rem; max-height: 60px; overflow-y: auto; border: 1px dashed #ccc; padding: 5px; margin-top: 5px; background-color: #fff;}
+        .error-text { color: red; font-weight: bold; }
+        .warn-text { color: #fd7e14; font-weight: bold;}
+        .success-text { color: green; font-weight: bold; }
+        .info-text { color: blue; }
+
+        /* --- Styles for LTP Indicator --- */
+        .ltp-indicator-bar {
+            height: 8px;
+            background: linear-gradient(to right, red, orange, yellow, lightgreen, green);
+            border-radius: 4px;
+            margin-top: 5px;
+            position: relative; /* Parent for absolute positioning of marker */
+            border: 1px solid #ccc;
+        }
+        .ltp-marker {
+            position: absolute;
+            width: 4px; /* Thin vertical line */
+            height: 12px; /* Taller than the bar */
+            background-color: #000; /* Black marker */
+            border-radius: 1px;
+            top: -3px; /* Center vertically relative to the bar */
+            transform: translateX(-50%); /* Center horizontally */
+            transition: left 0.5s ease; /* Smooth transition */
+            box-shadow: 0 0 2px rgba(0,0,0,0.5);
+        }
+        .ltp-info-text {
+             font-size: 0.75rem;
+             color: #6c757d;
+             margin-top: 0;
+             line-height: 1.2;
+        }
+        /* --- End LTP Styles --- */
+    </style>
+</head>
+<body>
+<div class="container-fluid">
+    <!-- Title slightly modified -->
+    <h3 class="mb-3">Upstox Option Chain Tool (Multi-Order + Triggers + Persistence)</h3>
+    <div class="nav-back">
+        <a href="index.html">« Back to Main Menu</a> |
+        <a href="auth_v2.html">Go to Authentication </a> |
+        <a href="square_off_v2.html">Square Off »</a>
+    </div>
+    <div class="token-status">Access Token Status: <span id="tokenLoadedStatus" class="error-text">Checking...</span></div>
+
+    <!-- Access Token Info -->
+    <div class="alert alert-info py-2" role="alert" id="tokenStatus">Loading Access Token...</div>
+
+    <!-- Input Controls -->
+    <div class="row g-2 align-items-end mb-3">
+        <div class="col-md-3">
+            <label for="indexSelect" class="form-label form-label-sm">Index:</label>
+            <select id="indexSelect" class="form-select form-select-sm">
+                <option value="NIFTY" data-instrument-key="NSE_INDEX|Nifty 50" data-lot-size="75">NIFTY 50</option>
+                <option value="BANKNIFTY" data-instrument-key="NSE_INDEX|Nifty Bank" data-lot-size="30">BANKNIFTY</option>
+                <option value="FINNIFTY" data-instrument-key="NSE_INDEX|Nifty Fin Service" data-lot-size="65">FINNIFTY</option>
+                <option value="MIDCPNIFTY" data-instrument-key="NSE_INDEX|Nifty Midcap Select" data-lot-size="120">MIDCP NIFTY</option>
+                <option value="SENSEX" data-instrument-key="BSE_INDEX|SENSEX" data-lot-size="20">SENSEX</option>
+                <option value="BANKEX" data-instrument-key="BSE_INDEX|BANKEX" data-lot-size="15">BANKEX</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label for="expiryDate" class="form-label form-label-sm">Expiry Date:</label>
+            <input type="date" id="expiryDate" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-1">
+            <label for="quantityLots" class="form-label form-label-sm">Lots:</label>
+            <input type="number" id="quantityLots" class="form-control form-control-sm" value="1" min="1" step="1">
+        </div>
+        <div class="col-md-2">
+            <button id="fetchChainBtn" class="btn btn-primary btn-sm w-100">Fetch Chain</button>
+        </div>
+        <div class="col-md-2">
+            <button id="fetchOhlcBtn" class="btn btn-secondary btn-sm w-100">Fetch Index OHLC</button>
+        </div>
+        <div class="col-md-2">
+            <button id="defineBasketBtn" class="btn btn-info btn-sm w-100" disabled>Define Basket</button>
+        </div>
+        <div class="col-md-2">
+            <!-- Modified Clear Logs Button -->
+            <button id="clearLogsBtn" class="btn btn-secondary btn-sm w-100" title="Clear logs and saved state">Clear Logs & State</button>
+        </div>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div id="loadingIndicator" class="text-center mb-2">
+        <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+        <span>Loading data...</span>
+    </div>
+
+    <!-- Index LTP & Status Section -->
+    <div class="row mb-2">
+        <div class="col-md-5">
+            <div class="status-section">
+                <h6>Index: <span id="currentIndexName">-</span> | LTP: <span id="indexLtp" class="fw-bold">-</span> <small id="indexLtpTimestamp" class="text-muted"></small> <small>(ATM: <span id="atmStrikeDisplay">-</span>)</small></h6>
+                <div class="ltp-info-text">
+                    Day Low: <span id="indexLow" class="fw-bold text-danger">-</span> | Day High: <span id="indexHigh" class="fw-bold text-success">-</span>
+                </div>
+                <div id="ltpIndicatorContainer" style="display: none;">
+                    <div class="ltp-indicator-bar">
+                        <div id="ltpMarker" class="ltp-marker" style="left: 50%;"></div>
+                    </div>
+                </div>
+                <h6>Monitoring Status: <span id="monitoringStatus" class="fw-bold info-text">Idle</span></h6>
+                <h6>Order Status: <span id="orderStatus" class="fw-bold info-text">Basket Not Defined</span></h6>
+                <div>Defined Basket: <span id="definedBasketCount">0</span> legs</div>
+                <div id="definedBasketDisplay" class="basket-display">No basket defined. Select options and click "Define Basket".</div>
+            </div>
+        </div>
+        <div class="col-md-7">
+            <div class="status-section">
+                <h6>Triggers & Monitoring Controls</h6>
+                <div class="row g-2 align-items-end">
+                    <div class="col">
+                        <label for="entryPrice" class="form-label form-label-sm">Entry Price (Index <=):</label>
+                        <input type="number" id="entryPrice" class="form-control form-control-sm" placeholder="e.g. 22000" step="0.05" disabled>
+                    </div>
+                    <div class="col">
+                        <label for="stopLossPrice" class="form-label form-label-sm">Stop Loss (Index <=):</label>
+                        <input type="number" id="stopLossPrice" class="form-control form-control-sm" placeholder="e.g. 21950" step="0.05" disabled>
+                    </div>
+                    <div class="col">
+                        <label for="targetPrice" class="form-label form-label-sm">Target Price (Index >=):</label>
+                        <input type="number" id="targetPrice" class="form-control form-control-sm" placeholder="e.g. 22100" step="0.05" disabled>
+                    </div>
+                    <div class="col-auto">
+                        <button id="startMonitoringBtn" class="btn btn-success btn-sm" disabled>Start Monitoring</button>
+                    </div>
+                    <div class="col-auto">
+                        <button id="stopMonitoringBtn" class="btn btn-danger btn-sm" disabled>Stop Monitoring</button>
+                    </div>
+                </div>
+                <small class="d-block mt-1 order-info">Entry: BUY basket if Index LTP <= Entry Price. SL/Target: SELL basket if Index LTP hits levels.</small>
+                <small class="d-block mt-1 order-info">BUY Limit = LTP + 0.05 | SELL Limit = LTP - 0.5</small>
+                <small class="d-block mt-1 order-info text-muted">Index LTP/Triggers based on daily OHLC 'Close'.</small>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Combined Option Chain Table -->
+    <div class="row">
+        <div class="col-12">
+            <p class="order-info mb-1">Select options below to include in the basket:</p>
+            <div class="table-container">
+                <table class="table table-sm table-striped table-bordered table-hover">
+                    <thead class="table-light">
+                    <tr>
+                        <th class="call-bg checkbox-col">Buy CE</th> <th class="call-bg">Delta</th> <th class="call-bg">IV</th> <th class="call-bg">OI</th> <th class="call-bg">Volume</th> <th class="call-bg">LTP</th>
+                        <th class="strike-col">Strike</th>
+                        <th class="put-bg">LTP</th> <th class="put-bg">Volume</th> <th class="put-bg">OI</th> <th class="put-bg">IV</th> <th class="put-bg">Delta</th> <th class="put-bg checkbox-col">Buy PE</th>
+                    </tr>
+                    </thead>
+                    <tbody id="optionChainTableBody">
+                    <tr><td colspan="13" class="text-center">Select Index/Expiry and Fetch Chain.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Logs -->
+    <div class="row mt-3">
+        <div class="col">
+            <h6>API Logs</h6>
+            <div id="logs" class="log-area"></div>
+        </div>
+    </div>
+
+</div> <!-- /container-fluid -->
+
+<!-- Bootstrap Bundle JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>
+
+<script>
+    // --- Configuration ---
+    const API_BASE_URL = 'https://api.upstox.com/v2';
+    const API_V3_BASE_URL = 'https://api-hft.upstox.com/v3';
+    const SINGLE_ORDER_V3_ENDPOINT = '/order/place';
+    const ACCESS_TOKEN_KEY = 'upstoxAccessToken';
+    const BUY_LIMIT_PRICE_BUFFER = 0.05;
+    const SELL_LIMIT_PRICE_BUFFER = -0.5;
+    const NUM_STRIKES_SIDE = 10;
+    const MULTI_ORDER_ENDPOINT = '/order/multi/place';
+    const OHLC_ENDPOINT = '/market-quote/ohlc';
+    const OHLC_INTERVAL = '1d';
+    const MULTI_QUOTE_ENDPOINT = '/market-quote/quotes';
+    const MONITORING_INTERVAL_MS = 5000; // 5 seconds
+
+    // --- NEW: localStorage Keys ---
+    const LS_BASKET_KEY = 'roboTraderBasket';
+    const LS_STATE_KEY = 'roboTraderState'; // Combines monitoring, order, triggers, context
+
+    // --- Globals ---
+    let accessToken = null;
+    let currentLotSize = 75;
+    let currentInstrumentKey = null;
+    let currentIndexName = 'NIFTY 50';
+
+    // --- State Management ---
+    let definedBasket = []; // { instrument_token, type, quantity, ltp_at_definition }
+    let isMonitoringActive = false;
+    let isBasketOrderPlaced = false; // Tracks if the initial BUY order was placed
+    let monitoringIntervalId = null;
+    let placedOrderDetails = []; // Still useful for logging/reference, but not persisted
+
+    // --- UI Elements (Assume they are defined as before) ---
+    // ... (keep all previous UI element const declarations) ...
+    const tokenLoadedStatusEl = document.getElementById('tokenLoadedStatus');
+    const tokenStatusEl = document.getElementById('tokenStatus');
+    const indexSelectEl = document.getElementById('indexSelect');
+    const expiryDateEl = document.getElementById('expiryDate');
+    const quantityLotsEl = document.getElementById('quantityLots');
+    const fetchChainBtn = document.getElementById('fetchChainBtn');
+    const defineBasketBtn = document.getElementById('defineBasketBtn');
+    const clearLogsBtn = document.getElementById('clearLogsBtn');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const currentIndexNameEl = document.getElementById('currentIndexName');
+    const indexLtpEl = document.getElementById('indexLtp');
+    const indexLtpTimestampEl = document.getElementById('indexLtpTimestamp');
+    const indexHighEl = document.getElementById('indexHigh');
+    const indexLowEl = document.getElementById('indexLow');
+    const ltpIndicatorContainerEl = document.getElementById('ltpIndicatorContainer');
+    const ltpMarkerEl = document.getElementById('ltpMarker');
+    const atmStrikeDisplayEl = document.getElementById('atmStrikeDisplay');
+    const monitoringStatusEl = document.getElementById('monitoringStatus');
+    const orderStatusEl = document.getElementById('orderStatus');
+    const definedBasketCountEl = document.getElementById('definedBasketCount');
+    const definedBasketDisplayEl = document.getElementById('definedBasketDisplay');
+    const entryPriceEl = document.getElementById('entryPrice');
+    const stopLossPriceEl = document.getElementById('stopLossPrice');
+    const targetPriceEl = document.getElementById('targetPrice');
+    const startMonitoringBtn = document.getElementById('startMonitoringBtn');
+    const stopMonitoringBtn = document.getElementById('stopMonitoringBtn');
+    const optionChainTableBody = document.getElementById('optionChainTableBody');
+    const logsEl = document.getElementById('logs');
+    const fetchOhlcBtn = document.getElementById('fetchOhlcBtn');
+
+
+    // --- Logging & API Helper (Keep as is) ---
+    function logMessage(type, ...messages) { const timestamp = new Date().toLocaleTimeString(); const logEntry = document.createElement('div'); const processedMessages = messages.map(m => typeof m === 'object' ? JSON.stringify(m) : m); logEntry.innerHTML = `<strong>[${timestamp} ${type}]</strong>: ${processedMessages.join(' ')}`; if (type === 'ERROR') { logEntry.className = 'error-text'; logEntry.style.fontWeight = 'bold'; } else if (type === 'REQUEST') { logEntry.className = 'info-text'; } else if (type === 'RESPONSE') { logEntry.className = 'success-text'; } else if (type === 'WARN') { logEntry.className = 'warn-text'; logEntry.style.fontWeight = 'bold';} else { logEntry.className = 'info-text'; /* Default */ } logsEl.appendChild(logEntry); logsEl.scrollTop = logsEl.scrollHeight;}
+    async function makeApiCall(endpoint, method = 'GET', body = null, isOrder = false, baseUrl = null) { // <-- Add baseUrl parameter
+        if (!accessToken) { throw new Error('Access Token missing.'); }
+        // Use provided baseUrl or default to the V2 base URL
+        const effectiveBaseUrl = baseUrl || API_BASE_URL; // <-- Use baseUrl if provided
+        const url = `${effectiveBaseUrl}${endpoint}`; // <-- Construct URL with effective base
+
+        const headers = { 'Accept': 'application/json', 'Authorization': `Bearer ${accessToken}`};
+        // V3 API might require version header, check documentation if issues arise
+        // headers['Api-Version'] = '3.0'; // Example - Check Upstox V3 docs if needed
+
+        if (method === 'POST' || method === 'PUT' || method === 'DELETE') {
+             headers['Content-Type'] = 'application/json';
+        }
+
+        const requestOptions = { method: method, headers: headers };
+        if (body) { requestOptions.body = JSON.stringify(body); }
+
+        logMessage('REQUEST', `${method} ${url}`, body ? `Body: ${JSON.stringify(body, null, 2)}` : '');
+
+        try {
+            const response = await fetch(url, requestOptions);
+            let data;
+            const contentType = response.headers.get("content-type");
+
+            if (contentType && contentType.indexOf("application/json") !== -1) {
+                 data = await response.json();
+            } else {
+                data = await response.text(); // Handle non-JSON or empty responses
+                if (!data && response.ok) {
+                   logMessage('WARN', `Empty successful response (${response.status}) from ${url}`);
+                   // For V3 single order, success might have empty body? Check API docs. Assume success if OK status.
+                   return { status: 'success', data: null }; // Treat empty success as success
+                } else if (!response.ok) {
+                    logMessage('ERROR', `Non-JSON error response (${response.status}) from ${url}: ${data}`);
+                    throw new Error(`API Error (${response.status}): ${data || 'Unknown error'}`);
+                } else {
+                    logMessage('WARN', `Non-JSON success response (${response.status}) from ${url}: ${data}`);
+                    return { status: 'success', data: data };
+                }
+            }
+
+            logMessage('RESPONSE', `${response.status}`, typeof data === 'object' ? JSON.stringify(data, null, 2) : data);
+
+            if (!response.ok) {
+                 // V3 error structure might differ, adapt if needed based on actual responses
+                const errorMsg = data?.errors?.[0]?.message || data?.message || (typeof data === 'string' ? data : JSON.stringify(data));
+                throw new Error(`API Error (${response.status}): ${errorMsg}`);
+            }
+
+            // V3 success/error status field might be different. Check Upstox V3 docs.
+            // Assuming 'status' field exists for now.
+             if (typeof data === 'object' && data?.status && data.status.toLowerCase() !== 'success') {
+                 logMessage('WARN', `API non-success status: ${data.status}`, data);
+                 // Propagate the non-success status for single order handling
+                 // throw new Error(`API returned status: ${data.status}`); // Optional: Treat non-success as error
+             }
+
+            return data; // Return the full response object
+
+        } catch (error) {
+            logMessage('ERROR', `API Call Failed: ${method} ${url}: ${error.message}`);
+            throw error; // Re-throw error to be caught by calling function
+        }
+    }
+
+
+    // --- NEW: Persistence Functions ---
+    function saveStateToLocalStorage() {
+        try {
+            const stateToSave = {
+                isMonitoringActive: isMonitoringActive,
+                isBasketOrderPlaced: isBasketOrderPlaced,
+                entryPrice: entryPriceEl.value,
+                stopLossPrice: stopLossPriceEl.value,
+                targetPrice: targetPriceEl.value,
+                monitoringStatusText: monitoringStatusEl.textContent,
+                monitoringStatusClass: monitoringStatusEl.className,
+                orderStatusText: orderStatusEl.textContent,
+                orderStatusClass: orderStatusEl.className,
+                quantityLots: quantityLotsEl.value,
+                // Context
+                savedInstrumentKey: currentInstrumentKey,
+                savedExpiryDate: expiryDateEl.value,
+                savedLotSize: currentLotSize,
+                savedIndexName: currentIndexName
+            };
+            localStorage.setItem(LS_STATE_KEY, JSON.stringify(stateToSave));
+            localStorage.setItem(LS_BASKET_KEY, JSON.stringify(definedBasket));
+            logMessage('DEBUG', 'State saved to localStorage.');
+        } catch (e) {
+            logMessage('ERROR', 'Failed to save state to localStorage:', e);
+        }
+    }
+
+    function loadStateFromLocalStorage() {
+        logMessage('INFO', 'Attempting to load state from localStorage...');
+        const savedStateString = localStorage.getItem(LS_STATE_KEY);
+        const savedBasketString = localStorage.getItem(LS_BASKET_KEY);
+
+        if (!savedStateString || !savedBasketString) {
+            logMessage('INFO', 'No saved state found in localStorage.');
+            return false; // Indicate nothing was loaded
+        }
+
+        try {
+            const savedState = JSON.parse(savedStateString);
+            const savedBasket = JSON.parse(savedBasketString);
+
+            // --- Context Check ---
+            const selectedOptionEl = indexSelectEl.options[indexSelectEl.selectedIndex];
+            const currentSelectedInstKey = selectedOptionEl.dataset.instrumentKey;
+            const currentSelectedExpiry = expiryDateEl.value;
+
+            if (savedState.savedInstrumentKey !== currentSelectedInstKey || savedState.savedExpiryDate !== currentSelectedExpiry) {
+                 logMessage('WARN', `Saved state context (${savedState.savedIndexName} / ${savedState.savedExpiryDate}) does not match current selection (${currentIndexName} / ${currentSelectedExpiry}). Discarding saved state.`);
+                 clearStateFromLocalStorage(); // Clear mismatching state
+                 return false;
+            }
+
+            logMessage('INFO', 'Saved state context matches. Applying saved state...');
+
+            // Restore State Variables
+            definedBasket = Array.isArray(savedBasket) ? savedBasket : [];
+            isMonitoringActive = !!savedState.isMonitoringActive; // Ensure boolean
+            isBasketOrderPlaced = !!savedState.isBasketOrderPlaced; // Ensure boolean
+            currentInstrumentKey = savedState.savedInstrumentKey; // Redundant due to check, but good practice
+            currentLotSize = savedState.savedLotSize;
+            currentIndexName = savedState.savedIndexName;
+            expiryDateEl.value = savedState.savedExpiryDate; // Redundant
+
+            // Restore UI Elements
+            quantityLotsEl.value = savedState.quantityLots || '1';
+            entryPriceEl.value = savedState.entryPrice || '';
+            stopLossPriceEl.value = savedState.stopLossPrice || '';
+            targetPriceEl.value = savedState.targetPrice || '';
+
+            updateStatusUI(savedState.monitoringStatusText || 'Idle', savedState.monitoringStatusClass || 'fw-bold info-text', 'monitoring', false); // Don't re-save during load
+            updateStatusUI(savedState.orderStatusText || 'Basket Not Defined', savedState.orderStatusClass || 'fw-bold info-text', 'order', false); // Don't re-save during load
+
+            // Update Basket Display
+            if (definedBasket.length > 0) {
+                let basketDisplayHtml = '';
+                definedBasket.forEach((item, index) => {
+                    basketDisplayHtml += `<div>${index + 1}. ${item.instrument_token} (${item.type}) Qty: ${item.quantity} ${item.ltp_at_definition !== null ? `(LTP@Def: ${item.ltp_at_definition})` : '(LTP N/A)'}</div>`;
+                });
+                definedBasketCountEl.textContent = definedBasket.length;
+                definedBasketDisplayEl.innerHTML = basketDisplayHtml;
+            } else {
+                definedBasketCountEl.textContent = '0';
+                definedBasketDisplayEl.innerHTML = 'No basket defined.';
+            }
+
+            // Restore Button/Input States based on loaded state
+            const basketDefined = definedBasket.length > 0;
+            entryPriceEl.disabled = !basketDefined || isMonitoringActive;
+            stopLossPriceEl.disabled = !basketDefined || isMonitoringActive;
+            targetPriceEl.disabled = !basketDefined || isMonitoringActive;
+            startMonitoringBtn.disabled = !basketDefined || isMonitoringActive;
+            stopMonitoringBtn.disabled = !isMonitoringActive;
+            fetchChainBtn.disabled = isMonitoringActive || !accessToken;
+            defineBasketBtn.disabled = isMonitoringActive || !accessToken; // Keep disabled if monitoring
+            quantityLotsEl.disabled = basketDefined; // Disable lots if basket is already defined from storage
+
+            logMessage('SUCCESS', 'State successfully loaded and applied.');
+
+            // --- Resume Monitoring if it was active ---
+            if (isMonitoringActive) {
+                logMessage('WARN', 'Resuming monitoring based on loaded state.');
+                resumeMonitoring();
+            }
+            return true; // Indicate state was loaded
+
+        } catch (e) {
+            logMessage('ERROR', 'Failed to parse or apply saved state from localStorage:', e);
+            clearStateFromLocalStorage(); // Clear corrupted state
+            return false; // Indicate failure
+        }
+    }
+
+    function clearStateFromLocalStorage() {
+        localStorage.removeItem(LS_STATE_KEY);
+        localStorage.removeItem(LS_BASKET_KEY);
+        logMessage('INFO', 'Saved state cleared from localStorage.');
+    }
+
+    // --- Modified/New Core Logic ---
+
+    function clearLogs() { // Modified to also clear state
+        logsEl.innerHTML = '';
+        clearStateFromLocalStorage(); // Clear storage as well
+        logMessage('INFO', 'Logs and saved state cleared.');
+        // Optionally reset the UI fully here if desired, but resetMonitoringAndOrderState usually handles it
+        resetMonitoringAndOrderState(true); // Pass flag to skip saving state
+    }
+
+
+    function getAccessToken() {
+        const token = localStorage.getItem(ACCESS_TOKEN_KEY);
+        if (token) {
+            accessToken = token;
+            tokenLoadedStatusEl.textContent = `Loaded (ends ...${token.slice(-4)})`;
+            tokenLoadedStatusEl.className = 'success-text';
+            tokenStatusEl.textContent = `Access Token found. Ready.`; // Modified message
+            tokenStatusEl.className = 'alert alert-success py-2';
+            fetchChainBtn.disabled = false; // Enable fetch initially
+        } else {
+            accessToken = null;
+            tokenLoadedStatusEl.textContent = 'Missing!';
+            tokenLoadedStatusEl.className = 'error-text';
+            tokenStatusEl.textContent = 'Error: Access Token not found. Please authenticate.';
+            tokenStatusEl.className = 'alert alert-danger py-2';
+            disableAllControls();
+        }
+    }
+
+    // Keep fetchOhlcBtn listener as is
+    fetchOhlcBtn.addEventListener('click', async () => {
+        if (!currentInstrumentKey || !accessToken) {
+             alert('Please select an Index and ensure Access Token is loaded.');
+             return;
+        }
+        logMessage('INFO', `Manually fetching OHLC for ${currentIndexName} (${currentInstrumentKey})`);
+        fetchOhlcBtn.textContent = 'Fetching...';
+        fetchOhlcBtn.disabled = true; // Disable while fetching
+
+        const indexData = await fetchIndexOhlcData(currentInstrumentKey);
+
+        if (indexData !== null) {
+            logMessage('SUCCESS', `Manual OHLC fetch successful.`);
+        } else {
+            logMessage('ERROR', `Manual OHLC fetch failed.`);
+        }
+
+        // Re-enable based on whether monitoring is active or basket defined
+        const basketDefined = definedBasket.length > 0;
+        fetchOhlcBtn.disabled = isMonitoringActive || !accessToken;
+        fetchOhlcBtn.textContent = 'Fetch Index OHLC';
+    });
+
+    // Keep setLoading as is
+    function setLoading(isLoading) {
+        loadingIndicator.style.display = isLoading ? 'flex' : 'none';
+        // Adjust disabling based on more complex state (monitoring, token)
+        const basketDefined = definedBasket.length > 0;
+        fetchChainBtn.disabled = isLoading || isMonitoringActive || !accessToken;
+        defineBasketBtn.disabled = isLoading || isMonitoringActive || !accessToken || optionChainTableBody.rows.length <= 1;
+        fetchOhlcBtn.disabled = isLoading || isMonitoringActive || !accessToken;
+    }
+
+    // Keep disableAllControls as is
+    function disableAllControls() {
+         fetchChainBtn.disabled = true;
+         defineBasketBtn.disabled = true;
+         entryPriceEl.disabled = true;
+         stopLossPriceEl.disabled = true;
+         targetPriceEl.disabled = true;
+         startMonitoringBtn.disabled = true;
+         stopMonitoringBtn.disabled = true;
+         fetchOhlcBtn.disabled = true;
+         quantityLotsEl.disabled = true;
+    }
+
+    // Keep fetchIndexOhlcData, updateLtpIndicator, fetchOptionChain, formatNumber, processAndDisplayOptions, displayCombinedOptionsTable as is
+    // ... (functions omitted for brevity, assume they are the same as before) ...
+    async function fetchIndexOhlcData(instKey) {
+        // ... (Existing implementation) ...
+        if (!instKey) {
+             logMessage('ERROR', 'Cannot fetch Index OHLC: Missing Instrument Key.');
+             indexLtpEl.textContent = 'Error';
+             indexHighEl.textContent = 'Error';
+             indexLowEl.textContent = 'Error';
+             indexLtpTimestampEl.textContent = ''; // Clear timestamp on error
+             ltpIndicatorContainerEl.style.display = 'none'; // Hide indicator on error
+             return null;
+        }
+        try {
+            const encodedKey = encodeURIComponent(instKey);
+            const instrumentKeyInResponse = instKey.replace('|', ':');
+            const endpoint = `${OHLC_ENDPOINT}?instrument_key=${encodedKey}&interval=${OHLC_INTERVAL}`;
+            const response = await makeApiCall(endpoint);
+
+            const ohlcData = response?.data?.[instrumentKeyInResponse]?.ohlc;
+
+            if (response?.status === 'success' && ohlcData) {
+                // Use the last object in the array if it exists, otherwise use the object directly
+                const latestOhlc = Array.isArray(ohlcData) ? ohlcData[ohlcData.length - 1] : ohlcData;
+
+                if (latestOhlc && typeof latestOhlc.high === 'number' && typeof latestOhlc.low === 'number' && typeof latestOhlc.close === 'number') {
+                    const high = latestOhlc.high;
+                    const low = latestOhlc.low;
+                    const close = latestOhlc.close;
+                    const fetchTimestamp = new Date(); // *** CAPTURE TIMESTAMP HERE ***
+                    const formattedTime = fetchTimestamp.toLocaleTimeString('en-US', { hour12: false }); // Format as HH:MM:SS
+
+                    // Update UI elements
+                    indexLtpEl.textContent = formatNumber(close, 2);
+                    indexLtpTimestampEl.textContent = `(@${formattedTime})`; // *** UPDATE TIMESTAMP UI ***
+                    indexHighEl.textContent = formatNumber(high, 2);
+                    indexLowEl.textContent = formatNumber(low, 2);
+                    indexLtpEl.className = 'fw-bold';
+                    indexHighEl.className = 'fw-bold text-success';
+                    indexLowEl.className = 'fw-bold text-danger';
+
+                    updateLtpIndicator(low, high, close);
+                    ltpIndicatorContainerEl.style.display = 'block';
+
+                    return { ltp: close, high: high, low: low, timestamp: fetchTimestamp }; // *** RETURN TIMESTAMP ***
+
+                } else {
+                     logMessage('ERROR', 'Could not parse H/L/C from index OHLC response:', latestOhlc);
+                     throw new Error('Invalid OHLC data format');
+                }
+            } else {
+                logMessage('ERROR', 'Could not parse index OHLC response or data object missing:', response);
+                throw new Error('Invalid or empty OHLC response');
+            }
+        } catch (error) {
+            logMessage('ERROR', `Fetch Index OHLC Failed: ${error.message}`);
+            indexLtpEl.textContent = 'Error';
+            indexHighEl.textContent = 'Error';
+            indexLowEl.textContent = 'Error';
+            indexLtpTimestampEl.textContent = ''; // Clear timestamp on error
+            indexLtpEl.className = 'fw-bold error-text';
+            indexHighEl.className = 'fw-bold error-text';
+            indexLowEl.className = 'fw-bold error-text';
+            ltpIndicatorContainerEl.style.display = 'none'; // Hide indicator on error
+            return null;
+        }
+    }
+    function updateLtpIndicator(low, high, currentLtp) {
+         // ... (Existing implementation) ...
+          if (low === null || high === null || currentLtp === null || isNaN(low) || isNaN(high) || isNaN(currentLtp)) {
+            ltpIndicatorContainerEl.style.display = 'none';
+            return;
+         }
+         const range = high - low;
+         let percentage = 50;
+         if (range > 0) {
+             const position = currentLtp - low;
+             percentage = (position / range) * 100;
+         } else if (currentLtp === low) {
+             percentage = 50; // Or 0 or 100 depending on preference when range is zero
+         }
+         percentage = Math.max(0, Math.min(100, percentage)); // Clamp between 0 and 100
+         ltpMarkerEl.style.left = `${percentage}%`;
+         ltpIndicatorContainerEl.style.display = 'block';
+    }
+    async function fetchOptionChain(instKey, expiryDate) {
+         // ... (Existing implementation) ...
+        if (!instKey || !expiryDate) return null;
+        try {
+            const formattedExpiry = expiryDate; // Assuming yyyy-mm-dd format from input
+            const encodedKey = encodeURIComponent(instKey);
+            const endpoint = `/option/chain?instrument_key=${encodedKey}&expiry_date=${formattedExpiry}`;
+            const response = await makeApiCall(endpoint);
+
+            if (response?.status === 'success' && Array.isArray(response.data)) {
+                logMessage('INFO', `Successfully fetched ${response.data.length} strikes for ${instKey} expiry ${expiryDate}`);
+                return response.data;
+            } else {
+                logMessage('ERROR', 'Could not parse option chain or data not an array:', response);
+                return null;
+            }
+        } catch (error) {
+            logMessage('ERROR', `Fetch option chain failed: ${error.message}`);
+            return null;
+        }
+    }
+    function formatNumber(value, decimals = 2, useLocale = false) {
+        // ... (Existing implementation) ...
+        const num = parseFloat(value);
+        if (value === null || value === undefined || isNaN(num)) {
+            return 'N/A';
+        }
+        const fixedNum = num.toFixed(decimals);
+        return useLocale ? parseFloat(fixedNum).toLocaleString('en-IN') : fixedNum;
+    }
+    function processAndDisplayOptions(strikeDataArray, indexData) {
+         // ... (Existing implementation - should work fine) ...
+        optionChainTableBody.innerHTML = `<tr><td colspan="13" class="text-center">Processing ${strikeDataArray?.length || 0} strikes...</td></tr>`;
+        atmStrikeDisplayEl.textContent = '-';
+
+        if (!strikeDataArray || strikeDataArray.length === 0 || indexData === null || indexData.ltp === undefined) {
+            logMessage('ERROR', 'Cannot process options: Invalid input data (chain or index LTP).');
+            optionChainTableBody.innerHTML = '<tr><td colspan="13" class="text-center error-text">Error processing chain data. Check logs.</td></tr>';
+            setLoading(false);
+            defineBasketBtn.disabled = true;
+            return;
+        }
+
+        const indexLtpValue = indexData.ltp;
+
+        try {
+            const sortedStrikes = strikeDataArray
+                .filter(d => typeof d.strike_price === 'number')
+                .sort((a, b) => a.strike_price - b.strike_price);
+
+            if (sortedStrikes.length === 0) {
+                throw new Error('No valid strikes with numeric prices found in the data.');
+            }
+
+            let atmStrike = 0, atmIndex = -1, minDiff = Infinity;
+            sortedStrikes.forEach((d, i) => {
+                const diff = Math.abs(d.strike_price - indexLtpValue);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    atmStrike = d.strike_price;
+                    atmIndex = i;
+                }
+            });
+
+            if (atmIndex === -1) {
+                // Fallback if exact ATM match fails (unlikely with sorted data)
+                atmStrike = sortedStrikes[Math.floor(sortedStrikes.length / 2)].strike_price;
+                atmIndex = sortedStrikes.findIndex(d => d.strike_price === atmStrike);
+                logMessage('WARN', `Could not precisely find ATM strike, using middle strike: ${atmStrike}`);
+            } else {
+                 logMessage('INFO', `Index LTP: ${indexLtpValue}, ATM Strike: ${atmStrike} (Index: ${atmIndex})`);
+            }
+            atmStrikeDisplayEl.textContent = formatNumber(atmStrike, 0);
+
+            const startIndex = Math.max(0, atmIndex - NUM_STRIKES_SIDE);
+            const endIndex = Math.min(sortedStrikes.length, atmIndex + NUM_STRIKES_SIDE + 1);
+            const selectedStrikesData = sortedStrikes.slice(startIndex, endIndex);
+
+            const processedStrikes = [];
+            const getOptionDetails = (optData) => {
+                 if (!optData || !optData.instrument_key) return null;
+                 // Ensure market data exists before accessing its properties
+                 const marketData = optData.market_data || {};
+                 const greeks = optData.option_greeks || {};
+                 return {
+                     instrument_token: optData.instrument_key,
+                     ltp: marketData.ltp,
+                     volume: marketData.volume,
+                     oi: marketData.oi,
+                     iv: greeks.iv,
+                     delta: greeks.delta
+                 };
+            };
+
+            selectedStrikesData.forEach(d => {
+                processedStrikes.push({
+                    strike_price: d.strike_price,
+                    is_atm: d.strike_price === atmStrike,
+                    call: getOptionDetails(d.call_options),
+                    put: getOptionDetails(d.put_options)
+                });
+            });
+
+            displayCombinedOptionsTable(processedStrikes);
+            defineBasketBtn.disabled = !accessToken || isMonitoringActive; // Can define only if not monitoring
+
+        } catch (error) {
+            logMessage('ERROR', `Error processing options: ${error.message}`, error);
+            optionChainTableBody.innerHTML = `<tr class="error-text"><td colspan="13" class="text-center">Error processing options: ${error.message}</td></tr>`;
+            defineBasketBtn.disabled = true;
+        } finally {
+            setLoading(false);
+        }
+    }
+    function displayCombinedOptionsTable(processedStrikes) {
+        // ... (Existing implementation - should work fine) ...
+        optionChainTableBody.innerHTML = '';
+        if (!processedStrikes || processedStrikes.length === 0) {
+            optionChainTableBody.innerHTML = '<tr><td colspan="13" class="text-center">No options data to display.</td></tr>';
+            return;
+        }
+
+        processedStrikes.forEach(strike => {
+            const row = document.createElement('tr');
+            if (strike.is_atm) {
+                row.classList.add('strike-highlight');
+            }
+
+            const call = strike.call || {};
+            const put = strike.put || {};
+
+            // Use 'N/A' as default from formatNumber
+            const cLtp = formatNumber(call.ltp, 2), cVol = formatNumber(call.volume, 0, true), cOI = formatNumber(call.oi, 0, true), cIV = formatNumber(call.iv, 2), cDelta = formatNumber(call.delta, 3);
+            const pLtp = formatNumber(put.ltp, 2), pVol = formatNumber(put.volume, 0, true), pOI = formatNumber(put.oi, 0, true), pIV = formatNumber(put.iv, 2), pDelta = formatNumber(put.delta, 3);
+
+            const cInstToken = call.instrument_token || '';
+            const pInstToken = put.instrument_token || '';
+            const cLtpRaw = call.ltp ?? ''; // Keep raw value for data attribute
+            const pLtpRaw = put.ltp ?? ''; // Keep raw value for data attribute
+
+            // Disable checkbox if monitoring is active
+            const checkboxDisabled = isMonitoringActive ? 'disabled' : '';
+
+            row.innerHTML = `
+                <td class="call-bg checkbox-col">${cInstToken ? `<input type="checkbox" class="option-select" data-instrument-token="${cInstToken}" data-type="CE" data-ltp="${cLtpRaw}" ${checkboxDisabled}>` : ''}</td>
+                <td class="call-bg">${cDelta}</td>
+                <td class="call-bg">${cIV}</td>
+                <td class="call-bg">${cOI}</td>
+                <td class="call-bg">${cVol}</td>
+                <td class="call-bg">${cLtp}</td>
+                <td class="strike-col">${formatNumber(strike.strike_price, 2)}</td>
+                <td class="put-bg">${pLtp}</td>
+                <td class="put-bg">${pVol}</td>
+                <td class="put-bg">${pOI}</td>
+                <td class="put-bg">${pIV}</td>
+                <td class="put-bg">${pDelta}</td>
+                <td class="put-bg checkbox-col">${pInstToken ? `<input type="checkbox" class="option-select" data-instrument-token="${pInstToken}" data-type="PE" data-ltp="${pLtpRaw}" ${checkboxDisabled}>` : ''}</td>
+            `;
+            optionChainTableBody.appendChild(row);
+        });
+    }
+
+    // Modified handleDefineBasket to save state
+    function handleDefineBasket() {
+        const selectedCheckboxes = optionChainTableBody.querySelectorAll('.option-select:checked');
+        if (selectedCheckboxes.length === 0) { alert(`Please select at least one option (CE or PE) to define the basket.`); return; }
+        const lots = parseInt(quantityLotsEl.value);
+        if (isNaN(lots) || lots < 1) { alert('Please enter a valid number of lots (minimum 1).'); quantityLotsEl.focus(); return; }
+        const totalQuantity = lots * currentLotSize;
+        definedBasket = [];
+        let basketDisplayHtml = '';
+        selectedCheckboxes.forEach((checkbox, index) => {
+            const instrumentToken = checkbox.dataset.instrumentToken;
+            const optionType = checkbox.dataset.type;
+            const ltpString = checkbox.dataset.ltp;
+            const currentLtp = parseFloat(ltpString);
+            if (!instrumentToken || !optionType) { logMessage('ERROR', `Skipping invalid selection: Missing instrument token or type.`); return; }
+            if (isNaN(currentLtp) || ltpString === '') { logMessage('WARN', `Selection ${instrumentToken} has invalid LTP "${ltpString}". Adding to basket, but BUY order might fail if LTP remains invalid.`); }
+            definedBasket.push({ instrument_token: instrumentToken, type: optionType, quantity: totalQuantity, ltp_at_definition: isNaN(currentLtp) ? null : currentLtp });
+            basketDisplayHtml += `<div>${index+1}. ${instrumentToken} (${optionType}) Qty: ${totalQuantity} ${isNaN(currentLtp) ? '(LTP N/A)' : `(LTP@Def: ${currentLtp})`}</div>`;
+        });
+        if (definedBasket.length > 0) {
+            logMessage('INFO', `Basket defined with ${definedBasket.length} legs. Total Qty/leg: ${totalQuantity} (Lots: ${lots}, Size: ${currentLotSize})`);
+            definedBasketCountEl.textContent = definedBasket.length;
+            definedBasketDisplayEl.innerHTML = basketDisplayHtml;
+            updateStatusUI('Basket Defined. Set triggers & start monitoring.', 'info-text', 'order');
+            entryPriceEl.disabled = false; stopLossPriceEl.disabled = false; targetPriceEl.disabled = false; startMonitoringBtn.disabled = false; stopMonitoringBtn.disabled = true;
+            fetchChainBtn.disabled = true; defineBasketBtn.disabled = true; quantityLotsEl.disabled = true; // Disable lots input
+            saveStateToLocalStorage(); // <-- SAVE STATE HERE
+        } else {
+             logMessage('WARN', 'Basket definition failed. No valid options selected.'); alert('Could not define basket. Ensure selected options have valid data.');
+             resetMonitoringAndOrderState();
+        }
+    }
+
+    // Keep validateTriggerPrices as is
+    function validateTriggerPrices() {
+        // ... (Existing implementation) ...
+        const entry = parseFloat(entryPriceEl.value);
+        const sl = parseFloat(stopLossPriceEl.value);
+        const target = parseFloat(targetPriceEl.value);
+
+        if (isNaN(entry) || isNaN(sl) || isNaN(target)) {
+            alert('Please enter valid numbers for Entry, Stop Loss, and Target prices.');
+            return false;
+        }
+        if (entry <= 0 || sl <= 0 || target <= 0) {
+             alert('Trigger prices must be positive.');
+             return false;
+        }
+        // Basic validation
+        if (sl >= entry) {
+            alert('Stop Loss price must be less than Entry Price.');
+            return false;
+        }
+        if (target <= entry) {
+            alert('Target Price must be greater than Entry Price.');
+            return false;
+        }
+        return { entry, sl, target };
+    }
+
+    // Modified startMonitoring to save state
+    function startMonitoring() {
+        const triggerPrices = validateTriggerPrices();
+        if (!triggerPrices) return;
+        if (isMonitoringActive) { logMessage('WARN', 'Monitoring is already active.'); return; }
+        logMessage('INFO', `Starting monitoring for Index: ${currentIndexName} (${currentInstrumentKey})`);
+        logMessage('INFO', `Triggers - Entry: <= ${triggerPrices.entry}, SL: <= ${triggerPrices.sl}, Target: >= ${triggerPrices.target}`);
+        isMonitoringActive = true; // Set flag first
+        // isBasketOrderPlaced = false; // Do NOT reset this here, loadState handles it
+        placedOrderDetails = [];
+        updateStatusUI('Monitoring Active...', 'success-text', 'monitoring');
+        if (!isBasketOrderPlaced) { // Only update if entry not yet hit
+             updateStatusUI('Awaiting Entry Trigger...', 'info-text', 'order');
+        } else {
+             updateStatusUI('Monitoring SL/Target...', 'success-text', 'order');
+        }
+        startMonitoringBtn.disabled = true; stopMonitoringBtn.disabled = false; entryPriceEl.disabled = true; stopLossPriceEl.disabled = true; targetPriceEl.disabled = true; fetchChainBtn.disabled = true; defineBasketBtn.disabled = true; quantityLotsEl.disabled = true;
+
+        // Disable option checkboxes while monitoring
+        optionChainTableBody.querySelectorAll('.option-select').forEach(cb => cb.disabled = true);
+
+        saveStateToLocalStorage(); // <-- SAVE STATE HERE
+
+        if (monitoringIntervalId) { clearInterval(monitoringIntervalId); }
+        checkIndexAndTriggerActions(triggerPrices.entry, triggerPrices.sl, triggerPrices.target); // Immediate check
+        monitoringIntervalId = setInterval(() => { checkIndexAndTriggerActions(triggerPrices.entry, triggerPrices.sl, triggerPrices.target); }, MONITORING_INTERVAL_MS);
+    }
+
+    // NEW: Function to resume monitoring after page load
+    function resumeMonitoring() {
+        const triggerPrices = validateTriggerPrices(); // Validate prices loaded from storage
+        if (!triggerPrices) {
+             logMessage('ERROR', "Cannot resume monitoring: Invalid trigger prices found in saved state. Stopping.");
+             stopMonitoring("Invalid state on resume");
+             return;
+        }
+        if (!isMonitoringActive) { // Should be true if called, but double check
+             logMessage('WARN', "Resume called but monitoring flag is not active. Starting fresh.");
+             isMonitoringActive = true; // Ensure it's set
+        }
+
+        logMessage('WARN', `Resuming monitoring loop for Index: ${currentIndexName}`);
+        logMessage('INFO', `Using loaded Triggers - Entry: <= ${triggerPrices.entry}, SL: <= ${triggerPrices.sl}, Target: >= ${triggerPrices.target}`);
+
+        // Update UI to reflect active monitoring (already done in loadState, but belt-and-suspenders)
+        startMonitoringBtn.disabled = true; stopMonitoringBtn.disabled = false; entryPriceEl.disabled = true; stopLossPriceEl.disabled = true; targetPriceEl.disabled = true; fetchChainBtn.disabled = true; defineBasketBtn.disabled = true; quantityLotsEl.disabled = true;
+        optionChainTableBody.querySelectorAll('.option-select').forEach(cb => cb.disabled = true);
+
+        // Ensure Status reflects correctly based on whether order was already placed
+         if (isBasketOrderPlaced) {
+             updateStatusUI('Monitoring SL/Target...', 'success-text', 'order', false); // No save needed, state already loaded
+         } else {
+             updateStatusUI('Awaiting Entry Trigger...', 'info-text', 'order', false);
+         }
+         updateStatusUI('Monitoring Active...', 'success-text', 'monitoring', false);
+
+
+        if (monitoringIntervalId) { clearInterval(monitoringIntervalId); }
+        // Don't run immediate check on resume, wait for the first interval
+        monitoringIntervalId = setInterval(() => { checkIndexAndTriggerActions(triggerPrices.entry, triggerPrices.sl, triggerPrices.target); }, MONITORING_INTERVAL_MS);
+    }
+
+
+    // Modified stopMonitoring to save state
+    function stopMonitoring(reason = "User stopped") {
+        if (!isMonitoringActive && !monitoringIntervalId) return; // Avoid stopping if already stopped
+        logMessage('WARN', `Stopping monitoring. Reason: ${reason}`);
+        clearInterval(monitoringIntervalId); monitoringIntervalId = null;
+        isMonitoringActive = false; // Set flag first
+
+        updateStatusUI('Idle', 'info-text', 'monitoring');
+        // Don't change order status text here unless explicitly needed (e.g., on error)
+        // Let the trigger logic update the order status upon SL/Target hit before calling stop.
+
+        const basketDefined = definedBasket.length > 0;
+        startMonitoringBtn.disabled = !basketDefined; stopMonitoringBtn.disabled = true;
+        entryPriceEl.disabled = !basketDefined; stopLossPriceEl.disabled = !basketDefined; targetPriceEl.disabled = !basketDefined;
+        fetchChainBtn.disabled = !accessToken; defineBasketBtn.disabled = !accessToken || !basketDefined; // Can define if basket exists & stopped
+        quantityLotsEl.disabled = basketDefined; // Keep disabled if basket defined
+
+        // Re-enable option checkboxes if chain is displayed
+        if (optionChainTableBody.rows.length > 1) {
+            optionChainTableBody.querySelectorAll('.option-select').forEach(cb => cb.disabled = false);
+        }
+
+        saveStateToLocalStorage(); // <-- SAVE STATE HERE (to record monitoring is off)
+    }
+
+    // Modified resetMonitoringAndOrderState to clear storage
+    function resetMonitoringAndOrderState(skipSave = false) {
+         logMessage('INFO', 'Resetting monitoring, basket, and order state.');
+         stopMonitoring("State reset (e.g., new chain fetch/index change/clear)");
+
+         definedBasket = []; isBasketOrderPlaced = false; placedOrderDetails = [];
+
+         updateStatusUI('Idle', 'info-text', 'monitoring', false); // Dont save during reset itself
+         updateStatusUI('Basket Not Defined', 'info-text', 'order', false);
+         definedBasketCountEl.textContent = '0';
+         definedBasketDisplayEl.innerHTML = 'No basket defined. Select options and click "Define Basket".';
+
+         entryPriceEl.value = ''; stopLossPriceEl.value = ''; targetPriceEl.value = '';
+         entryPriceEl.disabled = true; stopLossPriceEl.disabled = true; targetPriceEl.disabled = true;
+         startMonitoringBtn.disabled = true; stopMonitoringBtn.disabled = true;
+         quantityLotsEl.value = '1'; // Reset lots
+         quantityLotsEl.disabled = false; // Re-enable lots input
+
+         // Re-enable fetch/define if token exists and table has content (after fetch)
+         defineBasketBtn.disabled = !accessToken || optionChainTableBody.rows.length <= 1;
+         fetchChainBtn.disabled = !accessToken;
+         fetchOhlcBtn.disabled = !accessToken;
+
+         // Reset OHLC/LTP display and indicator
+         indexLtpEl.textContent = '-';
+         indexLtpTimestampEl.textContent = '';
+         indexHighEl.textContent = '-';
+         indexLowEl.textContent = '-';
+         indexLtpEl.className = 'fw-bold';
+         indexHighEl.className = 'fw-bold text-success';
+         indexLowEl.className = 'fw-bold text-danger';
+         ltpIndicatorContainerEl.style.display = 'none';
+         ltpMarkerEl.style.left = '50%';
+
+         // Uncheck and enable checkboxes
+         optionChainTableBody.querySelectorAll('.option-select').forEach(cb => {
+             cb.checked = false;
+             cb.disabled = false;
+         });
+
+         if (!skipSave) {
+            clearStateFromLocalStorage(); // Clear storage on explicit reset
+            saveStateToLocalStorage(); // Save the cleared/reset state
+         } else {
+             logMessage('DEBUG', 'Skipping state save/clear during reset.');
+         }
+    }
+
+    // Modified checkIndexAndTriggerActions to save state after order placement
+    async function checkIndexAndTriggerActions(entryPrice, stopLossPrice, targetPrice) {
+        if (!isMonitoringActive) return;
+
+        const indexData = await fetchIndexOhlcData(currentInstrumentKey);
+
+        if (indexData === null) {
+            logMessage('WARN', 'Skipping trigger check: Failed to get Index OHLC data.');
+            return;
+        }
+
+        const indexLtp = indexData.ltp;
+        const formattedTime = indexData.timestamp ? indexData.timestamp.toLocaleTimeString('en-US', { hour12: false }) : 'N/A';
+
+        logMessage('INFO', `Monitor Check: Index LTP (Close) = ${indexLtp} (@${formattedTime}), Low = ${indexData.low}, High = ${indexData.high}`);
+
+        try {
+            // --- Entry Trigger ---
+            if (!isBasketOrderPlaced && indexLtp <= entryPrice) {
+                logMessage('WARN', `ENTRY TRIGGER HIT: Index LTP (${indexLtp}) <= Entry Price (${entryPrice}). Placing BUY order.`);
+                updateStatusUI('Placing Basket BUY Order...', 'warn-text', 'order');
+                setLoading(true);
+                // Don't set isBasketOrderPlaced = true here yet, only after successful order call
+                const success = await executeMultiOrder(definedBasket, 'BUY');
+                setLoading(false);
+                if (success) {
+                    isBasketOrderPlaced = true; // Set flag on SUCCESS
+                    logMessage('SUCCESS', 'Basket BUY order placed successfully. Monitoring SL/Target.');
+                    updateStatusUI('Basket BUY Order Placed. Monitoring SL/Target.', 'success-text', 'order');
+                    saveStateToLocalStorage(); // <-- SAVE STATE after successful entry order
+                } else {
+                    logMessage('ERROR', 'Basket BUY order placement failed.');
+                    updateStatusUI('Basket BUY Order FAILED.', 'error-text', 'order');
+                    // isBasketOrderPlaced remains false
+                    stopMonitoring("Entry order failed"); // Stop monitoring on failure
+                    // State is saved inside stopMonitoring
+                }
+                return; // Exit check after action
+            }
+
+            // --- Stop Loss Trigger ---
+            if (isBasketOrderPlaced && indexLtp <= stopLossPrice) {
+                logMessage('ERROR', `STOP LOSS TRIGGER HIT: Index LTP (${indexLtp}) <= SL Price (${stopLossPrice}). Placing SELL order (Square Off).`);
+                updateStatusUI('Placing Square Off (SL) Order...', 'error-text', 'order');
+                setLoading(true);
+                stopMonitoring("Stop Loss Hit"); // Stop monitoring first
+                const success = await executeMultiOrder(definedBasket, 'SELL');
+                setLoading(false);
+                if (success) {
+                     logMessage('SUCCESS', 'Square Off (SL) order placed successfully.');
+                     updateStatusUI('Position Squared Off (Stop Loss).', 'success-text', 'order');
+                } else {
+                    logMessage('ERROR', 'Square Off (SL) order placement FAILED.');
+                     updateStatusUI('Square Off (SL) FAILED.', 'error-text', 'order');
+                     // Consider how to handle partial square-off or retry? For now, just log.
+                }
+                isBasketOrderPlaced = false; // Reset flag after square off attempt
+                saveStateToLocalStorage(); // <-- SAVE STATE after SL attempt (records order status change and monitoring stop)
+                return; // Exit check after action
+            }
+
+            // --- Target Trigger ---
+            if (isBasketOrderPlaced && indexLtp >= targetPrice) {
+                logMessage('SUCCESS', `TARGET TRIGGER HIT: Index LTP (${indexLtp}) >= Target Price (${targetPrice}). Placing SELL order (Square Off).`);
+                updateStatusUI('Placing Square Off (Target) Order...', 'success-text', 'order');
+                setLoading(true);
+                stopMonitoring("Target Hit"); // Stop monitoring first
+                const success = await executeMultiOrder(definedBasket, 'SELL');
+                setLoading(false);
+                if (success) {
+                     logMessage('SUCCESS', 'Square Off (Target) order placed successfully.');
+                     updateStatusUI('Position Squared Off (Target).', 'success-text', 'order');
+                } else {
+                    logMessage('ERROR', 'Square Off (Target) order placement FAILED.');
+                     updateStatusUI('Square Off (Target) FAILED.', 'error-text', 'order');
+                }
+                isBasketOrderPlaced = false; // Reset flag after square off attempt
+                saveStateToLocalStorage(); // <-- SAVE STATE after Target attempt
+                return; // Exit check after action
+            }
+
+             // If monitoring is still active and no trigger hit, update status text but don't save state redundantly
+             if (isMonitoringActive) {
+                 if (isBasketOrderPlaced) {
+                     updateStatusUI('Monitoring SL/Target...', 'success-text', 'order', false); // No save needed just for status text update
+                 } else {
+                     updateStatusUI('Awaiting Entry Trigger...', 'info-text', 'order', false);
+                 }
+             }
+
+        } catch (error) {
+             logMessage('ERROR', `Error during trigger check logic: ${error.message}`, error);
+             updateStatusUI('Error during check. Monitoring Stopped.', 'error-text', 'monitoring');
+             updateStatusUI('Error. Check Logs.', 'error-text', 'order');
+             stopMonitoring("Error in trigger check"); // Saves state inside stopMonitoring
+        }
+    }
+
+    // Keep fetchCurrentOptionLtps as is
+    async function fetchCurrentOptionLtps(instrumentTokens) {
+         // ... (Existing implementation) ...
+        if (!instrumentTokens || instrumentTokens.length === 0) {
+            logMessage('ERROR', 'Cannot fetch option LTPs: No instrument tokens provided.');
+            return null;
+        }
+        // Format: instrument_key=NSE_FO|49071&instrument_key=NSE_FO|49072 etc.
+        const formattedTokens = instrumentTokens.map(token => `instrument_key=${encodeURIComponent(token)}`).join('&');
+        const endpoint = `${MULTI_QUOTE_ENDPOINT}?${formattedTokens}`; // Using GET with query params
+
+        try {
+            const response = await makeApiCall(endpoint); // Use GET
+
+            // Response structure: { "status": "success", "data": { "NSE_FO:49071": { "last_price": 120.5 }, ... } }
+            if (response?.status === 'success' && typeof response.data === 'object') {
+                const ltpMap = {};
+                for (const key in response.data) {
+                    // Key might be "NSE_FO:XXXXX" or similar depending on segment
+                    if (response.data.hasOwnProperty(key) && response.data[key]?.last_price) {
+                        // Attempt to map back to original token format if needed, otherwise use the key directly
+                         const originalToken = key.replace(':', '|'); // Simple replacement
+                        // Check if the original token or the response key matches any input token
+                        if(instrumentTokens.includes(originalToken)) {
+                            ltpMap[originalToken] = response.data[key].last_price;
+                        } else if (instrumentTokens.includes(key)) {
+                            ltpMap[key] = response.data[key].last_price; // Fallback to using the key as is
+                        } else {
+                            logMessage('WARN', `Received LTP for unexpected key ${key}, trying to match...`)
+                            // More robust matching might be needed if formats vary wildly
+                        }
+                    }
+                }
+
+                logMessage('INFO', `Fetched current LTPs for ${Object.keys(ltpMap).length} / ${instrumentTokens.length} instruments.`);
+
+                // Check for missing tokens
+                instrumentTokens.forEach(token => {
+                    if (!(token in ltpMap)) {
+                        logMessage('WARN', `Could not fetch current LTP for ${token}. Square off for this leg may use default price or fail.`);
+                        ltpMap[token] = null; // Explicitly mark as not found
+                    }
+                });
+                return ltpMap;
+            } else {
+                logMessage('ERROR', 'Failed to fetch or parse multiple option LTPs:', response);
+                return null;
+            }
+        } catch (error) {
+            logMessage('ERROR', `Error fetching multiple option LTPs: ${error.message}`);
+            return null;
+        }
+    }
+
+    // Keep executeMultiOrder as is (it doesn't directly manage the persisted state flags)
+        // --- Modified function to place orders sequentially using V3 API ---
+        async function executeMultiOrder(basketItems, transactionType) {
+        if (!basketItems || basketItems.length === 0) {
+            logMessage('ERROR', 'Cannot place order(s): Basket is empty.');
+            return false;
+        }
+        if (transactionType !== 'BUY' && transactionType !== 'SELL') {
+            logMessage('ERROR', `Invalid transaction type: ${transactionType}`);
+            return false;
+        }
+
+        logMessage('WARN', `--- Preparing Sequential Orders (${transactionType}) using V3 API ---`);
+        let overallSuccess = true; // Assume success initially
+        placedOrderDetails = []; // Clear previous details
+        let currentLtps = {};
+        let successfulOrders = 0;
+        let failedOrders = 0;
+
+        // Fetch current LTPs only for SELL orders (square off)
+        if (transactionType === 'SELL') {
+            const tokensToFetch = basketItems.map(item => item.instrument_token);
+            currentLtps = await fetchCurrentOptionLtps(tokensToFetch);
+            if (!currentLtps) {
+                logMessage('ERROR', 'Failed to fetch current LTPs for square off. Aborting SELL order attempt.');
+                updateStatusUI('Square Off FAILED (LTP Fetch Error).', 'error-text', 'order');
+                return false; // Critical failure before starting
+            }
+            logMessage('WARN', `Using Current Option LTP + (${SELL_LIMIT_PRICE_BUFFER}) for SELL LIMIT orders.`);
+        } else {
+             logMessage('WARN', `Using LTP at definition + (${BUY_LIMIT_PRICE_BUFFER}) for BUY LIMIT orders.`);
+        }
+
+        // --- Loop through each item and place order individually ---
+        for (let i = 0; i < basketItems.length; i++) {
+            const item = basketItems[i];
+            const instrumentToken = item.instrument_token;
+            let limitPrice = null;
+
+            // --- Calculate Limit Price ---
+            if (transactionType === 'BUY') {
+                const ltpAtDefinition = item.ltp_at_definition;
+                if (ltpAtDefinition !== null && !isNaN(ltpAtDefinition)) {
+                    limitPrice = parseFloat((ltpAtDefinition + BUY_LIMIT_PRICE_BUFFER).toFixed(2));
+                } else {
+                    logMessage('ERROR', `Skipping leg ${i + 1} (${instrumentToken}) (BUY): Invalid/missing LTP at definition: "${item.ltp_at_definition}".`);
+                    overallSuccess = false; // Mark overall attempt as failed
+                    failedOrders++;
+                    placedOrderDetails.push({ status: 'error', message: 'Invalid LTP at definition', instrument_token: instrumentToken });
+                    continue; // Skip this leg
+                }
+            } else { // SELL
+                const currentLtp = currentLtps[instrumentToken]; // LTP fetched moments ago
+                if (currentLtp !== null && !isNaN(currentLtp)) {
+                    limitPrice = parseFloat((currentLtp + SELL_LIMIT_PRICE_BUFFER).toFixed(2));
+                } else {
+                    logMessage('ERROR', `Skipping leg ${i + 1} (${instrumentToken}) (SELL): Could not get valid current LTP. LTP: ${currentLtp}`);
+                    overallSuccess = false;
+                    failedOrders++;
+                    placedOrderDetails.push({ status: 'error', message: 'Invalid current LTP for sell', instrument_token: instrumentToken });
+                    continue; // Skip this leg
+                }
+            }
+
+            // Ensure limit price is positive
+            if (limitPrice <= 0) {
+                logMessage('ERROR', `Skipping leg ${i + 1} (${instrumentToken}) (${transactionType}): Calculated Limit Price <= 0 (${limitPrice}). Original LTP: ${transactionType === 'BUY' ? item.ltp_at_definition : currentLtps[instrumentToken]}.`);
+                overallSuccess = false;
+                failedOrders++;
+                 placedOrderDetails.push({ status: 'error', message: `Calculated limit price <= 0 (${limitPrice})`, instrument_token: instrumentToken });
+                continue; // Skip this leg
+            }
+
+            // --- Construct V3 Payload for Single Order ---
+            const singleOrderPayload = {
+                instrument_token: instrumentToken,
+                quantity: item.quantity,
+                product: "I", // Intraday. Verify requirement.
+                order_type: "LIMIT",
+                transaction_type: transactionType, // BUY or SELL
+                price: limitPrice,
+                validity: "DAY",
+                disclosed_quantity: 0,
+                trigger_price: 0, // Not a trigger order
+                is_amo: false,
+                tag: `roboTdr_${transactionType}_${Date.now()}_${i}`, // Unique tag per order
+                slice: true // As per V3 HFT example
+            };
+
+            logMessage('INFO', `Attempting to place order for leg ${i + 1}/${basketItems.length} (${transactionType} ${item.type}):`, singleOrderPayload);
+
+            // --- Make the API Call for this single order ---
+            try {
+                // Pass the V3 Base URL to makeApiCall
+                const response = await makeApiCall(SINGLE_ORDER_V3_ENDPOINT, 'POST', singleOrderPayload, true, API_V3_BASE_URL);
+
+                 // --- Process V3 Response ---
+                 // **** MODIFIED SECTION TO MATCH NEW RESPONSE FORMAT ****
+                 if (response &&
+                     response.status?.toLowerCase() === 'success' &&
+                     response.data?.order_ids &&
+                     Array.isArray(response.data.order_ids) &&
+                     response.data.order_ids.length > 0)
+                 {
+                     const orderId = response.data.order_ids[0]; // Get the first (and likely only) order ID
+                     logMessage('SUCCESS', `Order placed successfully for leg ${i + 1} (${instrumentToken}). Order ID: ${orderId}`);
+                     placedOrderDetails.push({
+                         status: 'success',
+                         order_id: orderId, // Store the extracted order ID
+                         instrument_token: instrumentToken,
+                         responseData: response.data,
+                         metadata: response.metadata // Optionally store metadata like latency
+                        });
+                     successfulOrders++;
+                 } else {
+                     // Handle API-level errors reported in the response body OR unexpected success format
+                     const errorMessage = response?.message || response?.errors?.[0]?.message || (response?.status !== 'success' ? `API Status: ${response?.status}` : 'Unexpected success response format');
+                     logMessage('ERROR', `Order placement failed for leg ${i + 1} (${instrumentToken}): ${errorMessage}`, response); // Log full response on error
+                     overallSuccess = false;
+                     failedOrders++;
+                     placedOrderDetails.push({ status: 'error', message: errorMessage, instrument_token: instrumentToken, responseData: response });
+                 }
+                 // **** END OF MODIFIED SECTION ****
+
+            } catch (error) {
+                // Handle network errors or errors thrown by makeApiCall
+                logMessage('ERROR', `Exception during order placement for leg ${i + 1} (${instrumentToken}): ${error.message}`);
+                overallSuccess = false;
+                failedOrders++;
+                placedOrderDetails.push({ status: 'error', message: `Network/Request Exception: ${error.message}`, instrument_token: instrumentToken });
+                // Optional: Decide whether to stop processing further legs on critical failure
+                // break; // Uncomment to stop processing remaining legs on error
+            }
+
+            // Optional delay between orders to avoid rate limiting, if necessary
+            // await new Promise(resolve => setTimeout(resolve, 250)); // 250ms delay
+
+        } // End of loop
+
+        // --- Log Summary ---
+        logMessage('INFO', `--- Order Placement Summary (${transactionType}) ---`);
+        logMessage('INFO', `Successful Orders: ${successfulOrders}`);
+        logMessage('INFO', `Failed Orders: ${failedOrders}`);
+
+        if (!overallSuccess) {
+            logMessage('ERROR', `One or more orders failed during the ${transactionType} process. Check logs above for details.`);
+            alert(`Order placement process completed, but ${failedOrders} order(s) failed. Check logs for details.`);
+        } else {
+            logMessage('SUCCESS', `All ${successfulOrders} orders were placed successfully for the ${transactionType} process.`);
+        }
+
+        return overallSuccess; // Return true only if ALL attempted orders succeeded
+    }
+
+    // Modified updateStatusUI to optionally skip saving state
+    function updateStatusUI(message, cssClass, area = 'monitoring', shouldSaveState = true) {
+        let element;
+        if (area === 'monitoring') { element = monitoringStatusEl; }
+        else if (area === 'order') { element = orderStatusEl; }
+        else { return; }
+        element.textContent = message;
+        element.className = `fw-bold ${cssClass}`;
+
+        // Save state ONLY if requested and monitoring is not currently active (to avoid saving too often during checks)
+        // OR save if monitoring IS active but this is an order status update (critical change)
+        if (shouldSaveState && (!isMonitoringActive || area === 'order')) {
+             // Debounce or be selective about saving? For now, save on status changes.
+             saveStateToLocalStorage();
+        }
+    }
+
+    // --- Event Listeners (Modified) ---
+
+    // Modified fetchChainBtn listener to clear state first
+    fetchChainBtn.addEventListener('click', async () => {
+        const selectedOptionEl = indexSelectEl.options[indexSelectEl.selectedIndex];
+        const instKey = selectedOptionEl.dataset.instrumentKey;
+        const expiry = expiryDateEl.value;
+
+        if (!instKey || !expiry || !accessToken) {
+             alert('Please select Index/Expiry and ensure Access Token is loaded.');
+             return;
+        }
+
+        // --- Clear existing state before fetching NEW chain ---
+        logMessage('INFO', 'New chain fetch requested. Clearing previous state.');
+        resetMonitoringAndOrderState(true); // Reset UI without clearing storage yet
+        clearStateFromLocalStorage(); // Now clear storage explicitly
+
+        // Update globals AFTER resetting
+        currentInstrumentKey = instKey;
+        currentIndexName = selectedOptionEl.text;
+        currentLotSize = parseInt(selectedOptionEl.dataset.lotSize) || 75;
+
+        logMessage('INFO', `Fetching Chain: ${currentIndexName} (${currentInstrumentKey}), Lot: ${currentLotSize}, Expiry: ${expiry}`);
+        setLoading(true);
+        currentIndexNameEl.textContent = currentIndexName;
+        indexLtpEl.textContent = 'Fetching...';
+        indexLtpTimestampEl.textContent = '';
+        indexHighEl.textContent = '...'; indexLowEl.textContent = '...'; ltpIndicatorContainerEl.style.display = 'none';
+        atmStrikeDisplayEl.textContent = '-';
+        optionChainTableBody.innerHTML = `<tr><td colspan="13" class="text-center">Fetching chain data...</td></tr>`;
+        // resetMonitoringAndOrderState is already called above
+
+        try {
+            const indexData = await fetchIndexOhlcData(currentInstrumentKey);
+
+            if (indexData !== null) {
+                const strikeDataArray = await fetchOptionChain(currentInstrumentKey, expiry);
+                if (strikeDataArray) {
+                    processAndDisplayOptions(strikeDataArray, indexData);
+                     // Save the initial "clean" state after fetching
+                     saveStateToLocalStorage();
+                } else {
+                    optionChainTableBody.innerHTML = `<tr class="error-text"><td colspan="13" class="text-center">Failed to load option chain data. Check logs.</td></tr>`;
+                    setLoading(false);
+                }
+            } else {
+                optionChainTableBody.innerHTML = `<tr class="error-text"><td colspan="13" class="text-center">Failed to load Index OHLC. Cannot process chain accurately.</td></tr>`;
+                setLoading(false);
+            }
+        } catch (error) {
+            logMessage('ERROR', `Error during fetch sequence: ${error.message}`, error);
+            optionChainTableBody.innerHTML = `<tr class="error-text"><td colspan="13" class="text-center">An unexpected error occurred. Check logs.</td></tr>`;
+            setLoading(false);
+        }
+    });
+
+    defineBasketBtn.addEventListener('click', handleDefineBasket);
+    startMonitoringBtn.addEventListener('click', startMonitoring);
+    stopMonitoringBtn.addEventListener('click', () => stopMonitoring("User stopped"));
+    clearLogsBtn.addEventListener('click', clearLogs); // Already modified to clear state
+
+    // Modified indexSelectEl listener to clear state
+    indexSelectEl.addEventListener('change', (event) => {
+         const selectedOptionEl = event.target.options[event.target.selectedIndex];
+         const newLotSize = parseInt(selectedOptionEl.dataset.lotSize) || 75;
+         const newIndexName = selectedOptionEl.text;
+         const newInstrumentKey = selectedOptionEl.dataset.instrumentKey;
+
+         logMessage('INFO', `Index changed to ${newIndexName}. Lot Size: ${newLotSize}. Clearing previous state.`);
+         currentIndexNameEl.textContent = newIndexName;
+         optionChainTableBody.innerHTML = '<tr><td colspan="13" class="text-center">Index changed. Fetch new chain.</td></tr>';
+         indexLtpEl.textContent = '-'; atmStrikeDisplayEl.textContent = '-';
+
+         // Reset state and UI, clearing storage
+         resetMonitoringAndOrderState(true); // Reset UI first without interacting with storage yet
+         clearStateFromLocalStorage();       // Clear the storage explicitly
+
+         // Update globals AFTER reset
+         currentLotSize = newLotSize;
+         currentIndexName = newIndexName;
+         currentInstrumentKey = newInstrumentKey;
+
+         // Save the new, clean state (important!)
+         saveStateToLocalStorage();
+    });
+
+    // Add listener for expiry date change to clear state as well
+    expiryDateEl.addEventListener('change', () => {
+         logMessage('INFO', `Expiry date changed. Clearing previous state.`);
+         optionChainTableBody.innerHTML = '<tr><td colspan="13" class="text-center">Expiry changed. Fetch new chain.</td></tr>';
+         indexLtpEl.textContent = '-'; atmStrikeDisplayEl.textContent = '-';
+
+         // Reset state and UI, clearing storage
+         resetMonitoringAndOrderState(true); // Reset UI first
+         clearStateFromLocalStorage();      // Clear storage
+         saveStateToLocalStorage();         // Save the cleared state
+    });
+
+
+    // --- Initialization (Modified) ---
+    document.addEventListener('DOMContentLoaded', () => {
+         // Set default expiry (e.g., next Thursday)
+         const today = new Date(); let expiryDate = new Date(today); const dayOfWeek = today.getDay();
+         let daysUntilThursday; if (dayOfWeek <= 4) { daysUntilThursday = 4 - dayOfWeek; } else { daysUntilThursday = 4 - dayOfWeek + 7; }
+         if (daysUntilThursday <= 0) { daysUntilThursday += 7; } // Handle Thursday itself or past Thursday
+         expiryDate.setDate(today.getDate() + daysUntilThursday);
+         const defaultExpiryString = expiryDate.toISOString().split('T')[0];
+         // Don't set expiryDateEl.value yet, wait for loadState
+
+         // Set initial index globals from default selection
+         const selectedOptionEl = indexSelectEl.options[indexSelectEl.selectedIndex];
+         currentLotSize = parseInt(selectedOptionEl.dataset.lotSize) || 75;
+         currentIndexName = selectedOptionEl.text;
+         currentInstrumentKey = selectedOptionEl.dataset.instrumentKey;
+         currentIndexNameEl.textContent = currentIndexName; // Set default name display
+
+         getAccessToken(); // Check token first
+
+         // --- Load State ---
+         // Set default expiry *before* loading state, so context check works
+         expiryDateEl.value = defaultExpiryString;
+         const stateLoaded = loadStateFromLocalStorage(); // Attempt to load
+
+         if (!stateLoaded) {
+            logMessage('INFO', 'Initializing with default state (no valid saved state found or context mismatch).');
+            // If state wasn't loaded (or was cleared due to context mismatch), apply defaults
+            resetMonitoringAndOrderState(true); // Reset UI fully but skip interacting with storage (already cleared if needed)
+            expiryDateEl.value = defaultExpiryString; // Ensure default expiry is set if not loaded
+            // Save this initial default state
+            saveStateToLocalStorage();
+         } else {
+            logMessage('INFO', 'Initialization complete using loaded state.');
+            // If state *was* loaded, loadStateFromLocalStorage already updated UI and variables.
+            // Resuming monitoring (if applicable) is handled within loadStateFromLocalStorage.
+         }
+
+         setLoading(false); // Ensure loading indicator is off
+
+         logMessage('WARN', 'Persistence Active: State (basket, triggers, status) is saved in localStorage.');
+         logMessage('WARN', 'Verify Instrument Tokens: Assumes chain API key IS the order token.');
+         logMessage('WARN', 'LIMIT BUY Price = LTP@Def + 0.05 | LIMIT SELL Price = Current Option LTP - 0.5.');
+         logMessage('WARN', 'Index Triggers use Daily OHLC Close price as LTP.');
+         logMessage('ERROR', 'Client-Side Tool: Monitoring stops if browser tab/window is closed or sleeps. Reloading will RESUME if context matches.');
+         logMessage('ERROR', 'Use with extreme caution and at your own risk.');
+    });
+</script>
+</body>
+</html>

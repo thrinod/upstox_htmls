@@ -1,0 +1,171 @@
+body {
+    font-family: sans-serif;
+    line-height: 1.6;
+    margin: 20px;
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+h1, h2 {
+    color: #0073e6; /* Upstox blue */
+    border-bottom: 2px solid #0073e6;
+    padding-bottom: 5px;
+}
+
+.controls, #orderControls {
+    background-color: #fff;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.controls label, #orderControls label {
+    margin-right: 10px;
+    font-weight: bold;
+}
+
+.controls input[type="text"],
+.controls input[type="date"],
+#orderControls input[type="number"] {
+    padding: 8px;
+    margin-right: 15px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+}
+
+.controls small {
+    color: #666;
+}
+
+
+button {
+    padding: 10px 15px;
+    background-color: #0073e6;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 1em;
+    transition: background-color 0.2s ease;
+}
+
+button:hover {
+    background-color: #005bb5;
+}
+
+button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+#optionChainContainer {
+    margin-top: 20px;
+    overflow-x: auto; /* Allow horizontal scrolling for wide tables */
+    background-color: #fff;
+    padding: 10px;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.option-chain-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+    font-size: 0.9em;
+}
+
+.option-chain-table th,
+.option-chain-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: center;
+    vertical-align: middle;
+}
+
+.option-chain-table th {
+    background-color: #e9ecef;
+    font-weight: bold;
+}
+
+/* Distinguish Calls and Puts headers */
+.option-chain-table .call-header { background-color: #cceeff; }
+.option-chain-table .put-header  { background-color: #ffcccc; }
+.option-chain-table .strike-header { background-color: #f8f9fa; font-weight: bold; }
+
+/* Align checkbox column */
+.option-chain-table td:nth-child(6), /* Call Checkbox */
+.option-chain-table td:nth-child(8) { /* Put Checkbox */
+    width: 40px;
+}
+
+/* Highlight Strike Price */
+.option-chain-table td:nth-child(7) {
+    font-weight: bold;
+    background-color: #f8f9fa;
+}
+
+/* Alternating row colors */
+.option-chain-table tbody tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+/* Optional: Highlight ITM/OTM - Requires market data not included here */
+/* .itm { background-color: #ffffcc; } */
+/* .otm { background-color: #ffffff; } */
+
+
+#orderControls {
+    border-top: 2px solid #0073e6;
+    margin-top: 20px;
+}
+
+.order-params {
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+}
+
+.order-params label {
+     min-width: 80px; /* Align labels */
+}
+
+.order-params input[type="radio"] {
+    margin-left: 5px;
+    margin-right: 15px;
+}
+
+#statusArea {
+    margin-top: 20px;
+    background-color: #e9ecef;
+    padding: 15px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+}
+
+#statusArea h2 {
+    margin-top: 0;
+    color: #333;
+    border-bottom: 1px solid #ccc;
+}
+
+#logs {
+    font-family: monospace;
+    white-space: pre-wrap; /* Wrap long lines */
+    word-wrap: break-word; /* Break words if necessary */
+    max-height: 300px;
+    overflow-y: auto; /* Scroll if logs get long */
+    background-color: #fff;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+}
+
+.log-error {
+    color: red;
+    font-weight: bold;
+}
+
+.log-success {
+    color: green;
+}

@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upstox Trading Bot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .loader {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #3498db;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .blink {
+            animation: blink 1s step-end infinite;
+        }
+        
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .positive {
+            color: #10b981;
+        }
+        
+        .negative {
+            color: #ef4444;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+
+
+    <div class="container mx-auto p-4 max-w-6xl">
+        <!-- Header -->
+        <header class="bg-blue-600 text-white p-4 rounded-lg shadow-md mb-6">
+            <div class="flex justify-between items-center">
+                <h1 class="text-2xl font-bold">
+                    <i class="fas fa-robot mr-2"></i> Upstox Trading Bot
+                </h1>
+                <div id="connection-status" class="flex items-center">
+                    <span class="mr-2">API Status:</span>
+                    <span id="status-indicator" class="h-3 w-3 rounded-full bg-gray-400"></span>
+                </div>
+            </div>
+        </header>
+        <div class="nav-back">
+            <a href="index.html">« Back to Main Menu</a> |
+            <a href="auth_v2.html">Go to Authentication </a> |
+            <a href="square_off_v2.html">Square Off »</a>
+        </div>
+
+        <br>
+        <div class="token-status">Access Token Status: <span id="tokenLoadedStatus" class="error">Checking...</span></div>
+
+        <!-- Auth Section -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">
+                <i class="fas fa-key mr-2"></i>Authentication
+            </h2>
+            <div class="flex flex-col md:flex-row gap-4">
+                <div class="flex-grow">
+                    <label for="access-token" class="block text-sm font-medium text-gray-700 mb-1">Access Token</label>
+                    <input type="password" id="access-token" placeholder="Enter your Upstox API access token" 
+                           class="w-full p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="flex items-end">
+                    <button id="connect-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-md font-medium transition-colors">
+                        <i class="fas fa-plug mr-2"></i>Connect
+                    </button>
+                </div>
+            </div>
+            <div id="auth-message" class="mt-3 text-sm hidden"></div>
+        </div>
+
+        <!-- Main Content -->
+        <div id="main-content" class="hidden">
+            <!-- Tabs -->
+            <div class="flex border-b border-gray-200 mb-6">
+                <button class="tab-btn py-3 px-6 font-medium text-gray-600 hover:text-blue-600 border-b-2 border-transparent hover:border-blue-500 transition-colors active" data-tab="positions">
+                    <i class="fas fa-chart-line mr-2"></i>Positions
+                </button>
+                <button class="tab-btn py-3 px-6 font-medium text-gray-600 hover:text-blue-600 border-b-2 border-transparent hover:border-blue-500 transition-colors" data-tab="pending-orders">
+                    <i class="fas fa-hourglass-half mr-2"></i>Pending Orders
+                </button>
+                <button class="tab-btn py-3 px-6 font-medium text-gray-600 hover:text-blue-600 border-b-2 border-transparent hover:border-blue-500 transition-colors" data-tab="clear-positions">
+                    <i class="fas fa-broom mr-2"></i>Clear Positions
+                </button>
+            </div>
+
+            <!-- Positions Tab -->
+            <div id="positions" class="tab-content active bg-white p-6 rounded-lg shadow-md">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-800">
+                        <i class="fas fa-chart-pie mr-2"></i>Today's Positions
+                    </h2>
+                    <button id="refresh-positions" class="bg-blue-100 text-blue-600 px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-200 transition-colors">
+                        <i class="fas fa-sync-alt mr-2"></i>Refresh
+                    </button>
+                </div>
+                <div id="positions-loading" class="loader my-8"></div>
+                <div id="positions-container" class="hidden">
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Symbol</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Price</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">LTP</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">P&L</th>
+                                </tr>
+                            </thead>
+                            <tbody id="positions-body" class="bg-white divide-y divide-gray-200">
+                                <!-- Positions will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="total-pl" class="mt-4 p-3 bg-gray-100 rounded-md text-right font-medium hidden">
+                        <span>Total P&L: </span>
+                        <span id="total-pl-value" class="text-lg"></span>
+                    </div>
+                </div>
+                <div id="positions-error" class="hidden p-4 bg-red-100 text-red-700 rounded-md mt-4">
+                    <i class="fas fa-exclamation-circle mr-2"></i>
+                    <span id="positions-error-message"></span>
+                </div>
+            </div>
+
+            <!-- Pending Orders Tab -->
+            <div id="pending-orders" class="tab-content bg-white p-6 rounded-lg shadow-md">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-800">
+                        <i class="fas fa-list-alt mr-2"></i>Pending Orders
+                    </h2>
+                    <div>
+                        <button id="refresh-orders" class="bg-blue-100 text-blue-600 px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-200 transition-colors mr-2">
+                            <i class="fas fa-sync-alt mr-2"></i>Refresh
+                        </button>
+                        <button id="cancel-all-orders" class="bg-red-100 text-red-600 px-4 py-2 rounded-md text-sm font-medium hover:bg-red-200 transition-colors">
+                            <i class="fas fa-times-circle mr-2"></i>Cancel All
+                        </button>
+                    </div>
+                </div>
+                <div id="orders-loading" class="loader my-8"></div>
+                <div id="orders-container" class="hidden">
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Symbol</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="orders-body" class="bg-white divide-y divide-gray-200">
+                                <!-- Orders will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div id="orders-error" class="hidden p-4 bg-red-100 text-red-700 rounded-md mt-4">
+                    <i class="fas fa-exclamation-circle mr-2"></i>
+                    <span id="orders-error-message"></span>
+                </div>
+                <div id="orders-success" class="hidden p-4 bg-green-100 text-green-700 rounded-md mt-4">
+                    <i class="fas fa-check-circle mr-2"></i>
+                    <span id="orders-success-message"></span>
+                </div>
+            </div>
+
+            <!-- Clear Positions Tab -->
+            <div id="clear-positions" class="tab-content bg-white p-6 rounded-lg shadow-md">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-800">
+                        <i class="fas fa-eraser mr-2"></i>Clear Positions
+                    </h2>
+                    <button id="refresh-clear" class="bg-blue-100 text-blue-600 px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-200 transition-colors">
+                        <i class="fas fa-sync-alt mr-2"></i>Refresh
+                    </button>
+                </div>
+                <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 rounded">
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-exclamation-triangle h-5 w-5"></i>
+                        </div>
+                        <div class="ml-3">
+                            <p class="text-sm">
+                                This will cancel all pending orders for each position and place a closing order with a 0.5% price adjustment.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h3 class="text-lg font-medium text-gray-800 mb-3">Current Positions</h3>
+                        <div id="clear-positions-loading" class="loader my-8"></div>
+                        <div id="clear-positions-container" class="hidden">
+                            <div class="space-y-3">
+                                <div id="clear-positions-list">
+                                    <!-- Positions for clearing will be listed here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-medium text-gray-800 mb-3">Actions</h3>
+                        <div class="bg-gray-50 p-4 rounded-md">
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Price Adjustment</label>
+                                <div class="flex items-center">
+                                    <span class="mr-2 text-gray-600">±</span>
+                                    <input type="number" id="price-adjustment" value="0.5" min="0.1" step="0.1" 
+                                           class="w-20 p-2 border border-gray-300 rounded-md">
+                                    <span class="ml-2 text-gray-600">%</span>
+                                </div>
+                            </div>
+                            <button id="execute-clear" class="w-full bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-md font-medium transition-colors">
+                                <i class="fas fa-broom mr-2"></i>Clear All Positions
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div id="clear-positions-error" class="hidden p-4 bg-red-100 text-red-700 rounded-md mt-4">
+                    <i class="fas fa-exclamation-circle mr-2"></i>
+                    <span id="clear-positions-error-message"></span>
+                </div>
+                <div id="clear-positions-success" class="hidden p-4 bg-green-100 text-green-700 rounded-md mt-4">
+                    <i class="fas fa-check-circle mr-2"></i>
+                    <span id="clear-positions-success-message"></span>
+                </div>
+                <div id="clear-positions-progress" class="hidden mt-4">
+                    <div class="mb-2 flex justify-between text-sm text-gray-600">
+                        <span>Progress:</span>
+                        <span id="clear-progress-text">0/0</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                        <div id="clear-progress-bar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let accessToken = '';
+        let positions = [];
+        let pendingOrders = [];
+        
+        // DOM Elements
+        const connectBtn = document.getElementById('connect-btn');
+        const accessTokenInput = document.getElementById('access-token');
+        const authMessage = document.getElementById('auth-message');
+        const mainContent = document.getElementById('main-content');
+        const statusIndicator = document.getElementById('status-indicator');
+        
+        // Tab navigation
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        const tabContents = document.querySelectorAll('.tab-content');
+        
+        // Positions tab elements
+        const refreshPositionsBtn = document.getElementById('refresh-positions');
+        const positionsLoading = document.getElementById('positions-loading');
+        const positionsContainer = document.getElementById('positions-container');
+        const positionsBody = document.getElementById('positions-body');
+        const totalPL = document.getElementById('total-pl');
+        const totalPLValue = document.getElementById('total-pl-value');
+        const positionsError = document.getElementById('positions-error');
+        const positionsErrorMessage = document.getElementById('positions-error-message');
+        
+        // Pending orders tab elements
+        const refreshOrdersBtn = document.getElementById('refresh-orders');
+        const cancelAllOrdersBtn = document.getElementById('cancel-all-orders');
+        const ordersLoading = document.getElementById('orders-loading');
+        const ordersContainer = document.getElementById('orders-container');
+        const ordersBody = document.getElementById('orders-body');
+        const ordersError = document.getElementById('orders-error');
+        const ordersErrorMessage = document.getElementById('orders-error-message');
+        const ordersSuccess = document.getElementById('orders-success');
+        const ordersSuccessMessage = document.getElementById('orders-success-message');
+        
+        // Clear positions tab elements
+        const refreshClearBtn = document.getElementById('refresh-clear');
+        const clearPositionsLoading = document.getElementById('clear-positions-loading');
+        const clearPositionsContainer = document.getElementById('clear-positions-container');
+        const clearPositionsList = document.getElementById('clear-positions-list');
+        const priceAdjustmentInput = document.getElementById('price-adjustment');
+        const executeClearBtn = document.getElementById('execute-clear');
+        const clearPositionsError = document.getElementById('clear-positions-error');
+        const clearPositionsErrorMessage = document.getElementById('clear-positions-error-message');
+        const clearPositionsSuccess = document.getElementById('clear-positions-success');
+        const clearPositionsSuccessMessage = document.getElementById('clear-positions-success-message');
+        const clearPositionsProgress = document.getElementById('clear-positions-progress');
+        const clearProgressText = document.getElementById('clear-progress-text');
+        const clearProgressBar = document.getElementById('clear-progress-bar');
+        
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', () => {
+            // Set up tab navigation
+            tabButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    const tabId = button.getAttribute('data-tab');
+                    
+                    // Update active tab button
+                    tabButtons.forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                    
+                    // Update active tab content
+                    tabContents.forEach(content => content.classList.remove('active'));
+                    document.getElementById(tabId).classList.add('active');
+                });
+            });
+            
+            // Set up button event listeners
+            connectBtn.addEventListener('click', connectToUpstox);
+            refreshPositionsBtn.addEventListener('click', fetchPositions);
+            refreshOrdersBtn.addEventListener('click', fetchPendingOrders);
+            cancelAllOrdersBtn.addEventListener('click', cancelAllPendingOrders);
+            refreshClearBtn.addEventListener('click', fetchPositionsForClearing);
+            executeClearBtn.addEventListener('click', clearAllPositions);
+            
+            // Check if we have an access token in localStorage
+            const savedToken = localStorage.getItem('upstoxAccessToken');
+            if (savedToken) {
+                accessTokenInput.value = savedToken;
+                connectToUpstox();
+            }
+        });
+        
+        // Connect to Upstox API
+        function connectToUpstox() {
+            accessToken = accessTokenInput.value.trim();
+            
+            if (!accessToken) {
+                showAuthMessage('Please enter your access token', 'error');
+                return;
+            }
+            
+            connectBtn.disabled = true;
+            connectBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Connecting...';
+            
+            // Test the connection by fetching profile
+            axios.get('https://api.upstox.com/v2/user/profile', {
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`
+                }
+            })
+            .then(response => {
+                // Connection successful
+                showAuthMessage(`Connected successfully as ${response.data.data.name}`, 'success');
+                statusIndicator.classList.remove('bg-gray-400', 'bg-red-500');
+                statusIndicator.classList.add('bg-green-500');
+                
+                // Store the token in localStorage
+                localStorage.setItem('upstoxAccessToken', accessToken);
+                
+                // Show the main content
+                mainContent.classList.remove('hidden');
+                
+                // Load initial data
+                fetchPositions();
+                fetchPendingOrders();
+            })
+            .catch(error => {
+                console.error('Connection error:', error);
+                showAuthMessage('Failed to connect to Upstox API. Please check your access token.', 'error');
+                statusIndicator.classList.remove('bg-gray-400', 'bg-green-500');
+                statusIndicator.classList.add('bg-red-500');
+            })
+            .finally(() => {
+                connectBtn.disabled = false;
+                connectBtn.innerHTML = '<i class="fas fa-plug mr-2"></i>Connect';
+            });
+        }
+        
+        // Show authentication message
+        function showAuthMessage(message, type) {
+            authMessage.textContent = message;
+            authMessage.classList.remove('hidden', 'text-red-600', 'text-green-600');
+            
+            if (type === 'error') {
+                authMessage.classList.add('text-red-600');
+            } else if (type === 'success') {
+                authMessage.classList.add('text-green-600');
+            }
+            
+            authMessage.classList.remove('hidden');
+        }
+        
+        // Fetch positions from Upstox
+        function fetchPositions() {
+            positionsLoading.classList.remove('hidden');
+            positionsContainer.classList.add('hidden');
+            positionsError.classList.add('hidden');
+            
+            axios.get('https://api.upstox.com/v2/portfolio/short-term-positions', {
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`
+                }
+            })
+            .then(response => {
+                positions = response.data.data || [];
+                renderPositions();
+                
+                // If we're on the positions tab, show the container
+                if (document.querySelector('.tab-btn.active').getAttribute('data-tab') === 'positions') {
+                    positionsContainer.classList.remove('hidden');
+                }
+                
+                // Also update the clear positions tab if needed
+                if (document.querySelector('.tab-btn.active').getAttribute('data-tab') === 'clear-positions') {
+                    renderPositionsForClearing();
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching positions:', error);
+                positionsErrorMessage.textContent = error.response?.data?.message || 'Failed to fetch positions';
+                positionsError.classList.remove('hidden');
+            })
+            .finally(() => {
+                positionsLoading.classList.add('hidden');
+            });
+        }
+        
+        // Render positions in the table
+        function renderPositions() {
+            positionsBody.innerHTML = '';
+            
+            if (positions.length === 0) {
+                positionsBody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="px-6 py-4 text-center text-gray-500">No positions found</td>
+                    </tr>
+                `;
+                totalPL.classList.add('hidden');
+                return;
+            }
+            
+            let totalProfitLoss = 0;
+            
+            positions.forEach(position => {
+                const pnl = parseFloat(position.pnl);
+                totalProfitLoss += pnl;
+                
+                const pnlClass = pnl >= 0 ? 'positive' : 'negative';
+                const pnlSymbol = pnl >= 0 ? '+' : '';
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm font-medium text-gray-900">${position.tradingsymbol}</div>
+                        <div class="text-sm text-gray-500">${position.exchange}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${position.quantity}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ₹${parseFloat(position.average_price).toFixed(2)}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ₹${parseFloat(position.last_price).toFixed(2)}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm ${pnlClass}">
+                        ${pnlSymbol}₹${Math.abs(pnl).toFixed(2)}
+                    </td>
+                `;
+                positionsBody.appendChild(row);
+            });
+            
+            // Update total P&L
+            const totalPLClass = totalProfitLoss >= 0 ? 'positive' : 'negative';
+            const totalPLSymbol = totalProfitLoss >= 0 ? '+' : '';
+            
+            totalPLValue.textContent = `${totalPLSymbol}₹${Math.abs(totalProfitLoss).toFixed(2)}`;
+            totalPLValue.className = `text-lg ${totalPLClass}`;
+            totalPL.classList.remove('hidden');
+        }
+        
+        // Fetch pending orders from Upstox
+        function fetchPendingOrders() {
+            ordersLoading.classList.remove('hidden');
+            ordersContainer.classList.add('hidden');
+            ordersError.classList.add('hidden');
+            ordersSuccess.classList.add('hidden');
+            
+            axios.get('https://api.upstox.com/v2/order/retrieve-all', {
+                params: {
+                    'filter': 'pending'
+                },
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`
+                }
+            })
+            .then(response => {
+                pendingOrders = response.data.data || [];
+                renderPendingOrders();
+                ordersContainer.classList.remove('hidden');
+            })
+            .catch(error => {
+                console.error('Error fetching pending orders:', error);
+                ordersErrorMessage.textContent = error.response?.data?.message || 'Failed to fetch pending orders';
+                ordersError.classList.remove('hidden');
+            })
+            .finally(() => {
+                ordersLoading.classList.add('hidden');
+            });
+        }
+        
+        // Render pending orders in the table
+        function renderPendingOrders() {
+            ordersBody.innerHTML = '';
+            
+            if (pendingOrders.length === 0) {
+                ordersBody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="px-6 py-4 text-center text-gray-500">No pending orders found</td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            pendingOrders.forEach(order => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${order.order_id}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm font-medium text-gray-900">${order.tradingsymbol}</div>
+                        <div class="text-sm text-gray-500">${order.exchange}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${order.transaction_type.toUpperCase()}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${order.quantity}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ₹${parseFloat(order.price).toFixed(2)}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${order.status}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <button class="cancel-order-btn text-red-600 hover:text-red-800" data-order-id="${order.order_id}">
+                            <i class="fas fa-times"></i> Cancel
+                        </button>
+                    </td>
+                `;
+                ordersBody.appendChild(row);
+            });
+            
+            // Add event listeners to cancel buttons
+            document.querySelectorAll('.cancel-order-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const orderId = this.getAttribute('data-order-id');
+                    cancelOrder(orderId);
+                });
+            });
+        }
+        
+        // Cancel a single order
+        function cancelOrder(orderId) {
+            const cancelBtn = document.querySelector(`.cancel-order-btn[data-order-id="${orderId}"]`);
+            if (cancelBtn) {
+                cancelBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                cancelBtn.disabled = true;
+            }
+            
+            axios.delete(`https://api.upstox.com/v2/order/cancel/${orderId}`, {
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`
+                }
+            })
+            .then(() => {
+                // Remove the order from the list
+                pendingOrders = pendingOrders.filter(order => order.order_id !== orderId);
+                renderPendingOrders();
+                
+                // Show success message
+                ordersSuccessMessage.textContent = `Order ${orderId} cancelled successfully`;
+                ordersSuccess.classList.remove('hidden');
+            })
+            .catch(error => {
+                console.error('Error cancelling order:', error);
+                ordersErrorMessage.textContent = `Failed to cancel order ${orderId}: ${error.response?.data?.message || 'Unknown error'}`;
+                ordersError.classList.remove('hidden');
+                
+                if (cancelBtn) {
+                    cancelBtn.innerHTML = '<i class="fas fa-times"></i> Cancel';
+                    cancelBtn.disabled = false;
+                }
+            });
+        }
+        
+        // Cancel all pending orders
+        function cancelAllPendingOrders() {
+            if (pendingOrders.length === 0) {
+                ordersErrorMessage.textContent = 'No pending orders to cancel';
+                ordersError.classList.remove('hidden');
+                return;
+            }
+            
+            cancelAllOrdersBtn.disabled = true;
+            cancelAllOrdersBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Cancelling...';
+            
+            // Create an array of cancel promises
+            const cancelPromises = pendingOrders.map(order => {
+                return axios.delete(`https://api.upstox.com/v2/order/cancel/${order.order_id}`, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+            });
+            
+            // Execute all cancel requests
+            Promise.all(cancelPromises)
+            .then(() => {
+                // Refresh the orders list
+                fetchPendingOrders();
+                
+                // Show success message
+                ordersSuccessMessage.textContent = `All ${pendingOrders.length} orders cancelled successfully`;
+                ordersSuccess.classList.remove('hidden');
+            })
+            .catch(error => {
+                console.error('Error cancelling orders:', error);
+                ordersErrorMessage.textContent = `Failed to cancel some orders: ${error.response?.data?.message || 'Unknown error'}`;
+                ordersError.classList.remove('hidden');
+            })
+            .finally(() => {
+                cancelAllOrdersBtn.disabled = false;
+                cancelAllOrdersBtn.innerHTML = '<i class="fas fa-times-circle mr-2"></i>Cancel All';
+            });
+        }
+        
+        // Fetch positions for the clear positions tab
+        function fetchPositionsForClearing() {
+            clearPositionsLoading.classList.remove('hidden');
+            clearPositionsContainer.classList.add('hidden');
+            clearPositionsError.classList.add('hidden');
+            
+            // We can reuse the positions data if it's already loaded
+            if (positions.length > 0) {
+                renderPositionsForClearing();
+                clearPositionsLoading.classList.add('hidden');
+                clearPositionsContainer.classList.remove('hidden');
+            } else {
+                fetchPositions();
+            }
+        }
+        
+        // Render positions for clearing
+        function renderPositionsForClearing() {
+            clearPositionsList.innerHTML = '';
+            
+            if (positions.length === 0) {
+                clearPositionsList.innerHTML = `
+                    <div class="p-4 text-center text-gray-500">
+                        No positions found to clear
+                    </div>
+                `;
+                return;
+            }
+            
+            positions.forEach(position => {
+                const pnl = parseFloat(position.pnl);
+                const pnlClass = pnl >= 0 ? 'positive' : 'negative';
+                const pnlSymbol = pnl >= 0 ? '+' : '';
+                
+                const positionElement = document.createElement('div');
+                positionElement.className = 'bg-gray-50 p-4 rounded-md mb-3';
+                positionElement.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h4 class="font-medium text-gray-900">${position.tradingsymbol}</h4>
+                            <p class="text-sm text-gray-500">${position.exchange} | Qty: ${position.quantity}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm">Avg: ₹${parseFloat(position.average_price).toFixed(2)}</p>
+                            <p class="text-sm">LTP: ₹${parseFloat(position.last_price).toFixed(2)}</p>
+                            <p class="text-sm ${pnlClass}">P&L: ${pnlSymbol}₹${Math.abs(pnl).toFixed(2)}</p>
+                        </div>
+                    </div>
+                `;
+                clearPositionsList.appendChild(positionElement);
+            });
+        }
+        
+        // Clear all positions with 0.5% price adjustment
+        function clearAllPositions() {
+            if (positions.length === 0) {
+                clearPositionsErrorMessage.textContent = 'No positions found to clear';
+                clearPositionsError.classList.remove('hidden');
+                return;
+            }
+            
+            const adjustment = parseFloat(priceAdjustmentInput.value) || 0.5;
+            
+            if (!confirm(`Are you sure you want to clear all ${positions.length} positions with ${adjustment}% price adjustment?`)) {
+                return;
+            }
+            
+            executeClearBtn.disabled = true;
+            executeClearBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processing...';
+            clearPositionsError.classList.add('hidden');
+            clearPositionsSuccess.classList.add('hidden');
+            
+            // Show progress bar
+            clearPositionsProgress.classList.remove('hidden');
+            clearProgressText.textContent = `0/${positions.length}`;
+            clearProgressBar.style.width = '0%';
+            
+            // Process each position sequentially
+            let processed = 0;
+            let successfulClears = 0;
+            
+            const processNextPosition = (index) => {
+                if (index >= positions.length) {
+                    // All positions processed
+                    executeClearBtn.disabled = false;
+                    executeClearBtn.innerHTML = '<i class="fas fa-broom mr-2"></i>Clear All Positions';
+                    
+                    if (successfulClears === positions.length) {
+                        clearPositionsSuccessMessage.textContent = `Successfully cleared all ${positions.length} positions`;
+                        clearPositionsSuccess.classList.remove('hidden');
+                    } else {
+                        clearPositionsSuccessMessage.textContent = `Cleared ${successfulClears} of ${positions.length} positions`;
+                        clearPositionsSuccess.classList.remove('hidden');
+                    }
+                    
+                    // Refresh positions
+                    setTimeout(() => {
+                        fetchPositions();
+                        fetchPendingOrders();
+                    }, 2000);
+                    
+                    return;
+                }
+                
+                const position = positions[index];
+                processed++;
+                
+                // Update progress
+                clearProgressText.textContent = `${processed}/${positions.length}`;
+                clearProgressBar.style.width = `${(processed / positions.length) * 100}%`;
+                
+                // First cancel all pending orders for this symbol
+                axios.get('https://api.upstox.com/v2/order/retrieve-all', {
+                    params: {
+                        'filter': 'pending'
+                    },
+                    headers: {
+                        'Accept': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                })
+                .then(response => {
+                    const symbolOrders = response.data.data?.filter(order => 
+                        order.tradingsymbol === position.tradingsymbol && 
+                        order.exchange === position.exchange
+                    ) || [];
+                    
+                    if (symbolOrders.length === 0) {
+                        return Promise.resolve();
+                    }
+                    
+                    const cancelPromises = symbolOrders.map(order => {
+                        return axios.delete(`https://api.upstox.com/v2/order/cancel/${order.order_id}`, {
+                            headers: {
+                                'Accept': 'application/json',
+                                'Authorization': `Bearer ${accessToken}`
+                            }
+                        });
+                    });
+                    
+                    return Promise.all(cancelPromises);
+                })
+                .then(() => {
+                    // Now place the closing order
+                    const transactionType = position.quantity > 0 ? 'SELL' : 'BUY';
+                    const quantity = Math.abs(position.quantity);
+                    const lastPrice = parseFloat(position.last_price);
+                    const price = transactionType === 'SELL' 
+                        ? lastPrice * (1 - (adjustment / 100))
+                        : lastPrice * (1 + (adjustment / 100));
+                    
+                    const orderData = {
+                        "exchange": position.exchange,
+                        "tradingsymbol": position.tradingsymbol,
+                        "transaction_type": transactionType,
+                        "order_type": "LIMIT",
+                        "quantity": quantity,
+                        "price": price.toFixed(2),
+                        "product": "MIS",
+                        "validity": "DAY"
+                    };
+                    
+                    return axios.post('https://api.upstox.com/v2/order/place', orderData, {
+                        headers: {
+                            'Accept': 'application/json',
+                            'Authorization': `Bearer ${accessToken}`
+                        }
+                    });
+                })
+                .then(() => {
+                    successfulClears++;
+                    processNextPosition(index + 1);
+                })
+                .catch(error => {
+                    console.error(`Error clearing position ${position.tradingsymbol}:`, error);
+                    processNextPosition(index + 1);
+                });
+            };
+            
+            // Start processing
+            processNextPosition(0);
+        }
+    </script>
+</body>
+</html>

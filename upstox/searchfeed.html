@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upstox Index Option Tool (Data View)</title>
+    <style>
+        /* (Keep previous CSS styles) */
+        body { font-family: sans-serif; line-height: 1.6; margin: 20px; background-color: #f4f4f4; }
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); max-width: 1200px; margin: auto; }
+        h1, h2 { color: #333; text-align: center; margin-bottom: 20px; }
+        .section { margin-bottom: 25px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
+        input[type="file"], input[type="text"], input[type="date"], select, button { padding: 10px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; width: calc(100% - 22px); box-sizing: border-box; font-size: 1em; }
+        input[type="date"] { position: relative; }
+        button { background-color: #007bff; color: white; cursor: pointer; transition: background-color 0.3s ease; width: auto; padding: 10px 20px; border: none; }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        #statusArea { margin-top: 15px; padding: 10px; border: 1px solid #eee; background-color: #e9ecef; min-height: 80px; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; border-radius: 4px; max-height: 300px; overflow-y: auto; }
+        .status-error, .status-success, .status-info, .status-warn { padding-left: 10px; margin-bottom: 5px; border-left: 5px solid transparent;}
+        .status-error { color: #dc3545; border-left-color: #dc3545; }
+        .status-success { color: #28a745; border-left-color: #28a745; }
+        .status-info { color: #17a2b8; border-left-color: #17a2b8; }
+        .status-warn { color: #ffc107; border-left-color: #ffc107; background-color: #fff3cd; }
+        .option-chain { display: flex; gap: 20px; margin-top: 20px; flex-wrap: wrap; }
+        .option-table-container { flex: 1; min-width: 480px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; table-layout: fixed; /* Helps with column widths */ }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 0.9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; /* Prevent wrapping */ }
+        th { background-color: #e9ecef; font-weight: bold; position: sticky; top: 0; z-index: 1;}
+        td input[type="checkbox"] { width: auto; margin: 0; vertical-align: middle; cursor: pointer; }
+        td input[type="checkbox"]:disabled { cursor: not-allowed; }
+        .strike-price { font-weight: bold; background-color: #fffacd; text-align: center !important; }
+        .expiry-date { min-width: 80px; }
+        .instrument-key-cell { font-size: 0.8em; word-break: break-all; white-space: normal; /* Allow key to wrap */}
+        .td-center { text-align: center; }
+        .td-right { text-align: right; }
+        #storeJsonButton { background-color: #28a745; }
+        #storeJsonButton:hover { background-color: #218838; }
+        .processing-indicator { font-style: italic; color: #555; margin-left: 10px;}
+        .filter-controls { display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;}
+        .filter-controls > div { flex: 1; min-width: 200px;}
+        .warning { color: #dc3545; font-weight: bold; border: 2px solid #dc3545; padding: 10px; margin-bottom: 15px; background-color: #f8d7da;}
+
+        /* --- New Styles for Data View --- */
+        .view-toggle-area { text-align: right; margin-bottom: 15px; border-bottom: 1px solid #ddd; padding-bottom: 10px;}
+        #dataViewSection { margin-top: 20px; }
+        #paginationControls { margin-top: 15px; text-align: center; }
+        #paginationControls button { margin: 0 5px; }
+        #pageInfo { margin: 0 15px; font-weight: bold; }
+        #storedDataTable th, #storedDataTable td { padding: 6px; /* Slightly smaller padding */}
+        #storedDataTable th:nth-child(1), #storedDataTable td:nth-child(1) { width: 20%; } /* Trading Symbol */
+        #storedDataTable th:nth-child(2), #storedDataTable td:nth-child(2) { width: 18%; } /* Instrument Key */
+        #storedDataTable th:nth-child(3), #storedDataTable td:nth-child(3) { width: 10%; } /* Underlying */
+        #storedDataTable th:nth-child(4), #storedDataTable td:nth-child(4) { width: 10%; } /* Expiry */
+        #storedDataTable th:nth-child(5), #storedDataTable td:nth-child(5) { width: 10%; text-align: right;} /* Strike */
+        #storedDataTable th:nth-child(6), #storedDataTable td:nth-child(6) { width: 8%; text-align: center;} /* Type */
+        #storedDataTable th:nth-child(7), #storedDataTable td:nth-child(7) { width: 8%; text-align: right;} /* Lot Size */
+        #storedDataTable th:nth-child(8), #storedDataTable td:nth-child(8) { width: 16%; } /* Segment */
+        /* --- End New Styles --- */
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Upstox Index Option Tool</h1>
+
+    <div class="nav-back">
+        <a href="index.html">« Back to Main Menu</a> |
+        <a href="auth_v2.html">Go to Authentication </a> |
+        <a href="square_off_v2.html">Square Off »</a>
+    </div>
+
+    <br>
+     <!-- View Toggle Button -->
+     <div class="view-toggle-area">
+         <button id="viewToggleButton">View Stored Data</button>
+     </div>
+
+    <div id="mainAppSection"> <!-- Wrap main app sections -->
+        <div class="warning">
+            <strong>WARNING:</strong> Using the REAL API involves financial risk. Verify API details and test thoroughly. Use at your own risk.
+        </div>
+        <!-- Section 1: Access Token -->
+        <div class="section"><h2>1. Set Access Token</h2><label for="accessTokenInput">Upstox Access Token:</label><input type="text" id="accessTokenInput" placeholder="Paste token"><button id="saveTokenBtn">Save</button></div>
+        <!-- Section 2: Load Data -->
+        <div class="section"><h2>2. Load Index Option Data (JSON)</h2><p>Upload JSON. Only specified index options/instruments stored.</p><label for="instrumentJsonFile">Upload File:</label><input type="file" id="instrumentJsonFile" accept=".json"><button id="storeJsonButton" disabled>Store Index Options</button><span id="processingIndicator" class="processing-indicator" style="display: none;">Processing...</span><p id="fileStatus">No file.</p></div>
+        <!-- Section 3: Fetch Options -->
+        <div class="section"><h2>3. Fetch Top 10 ATM Options</h2><div class="filter-controls"><div><label for="underlyingInput">Index Symbol:</label><input type="text" id="underlyingInput" list="underlyingList" placeholder="e.g., NIFTY" disabled><datalist id="underlyingList"></datalist></div><div><label for="expiryDateInput">Expiry Date:</label><input type="date" id="expiryDateInput" disabled></div><div><button id="fetchPricesBtn" disabled>Fetch Options</button></div></div><div id="optionChainContainer" class="option-chain" style="display: none; margin-top: 20px;"><div class="option-table-container"><h3>Calls (CE)</h3><table id="callOptionsTable"><thead><tr><th>Select</th><th>Expiry</th><th>Strike</th><th>LTP</th><th>Key</th></tr></thead><tbody id="callOptionsTableBody"></tbody></table></div><div class="option-table-container"><h3>Puts (PE)</h3><table id="putOptionsTable"><thead><tr><th>Select</th><th>Expiry</th><th>Strike</th><th>LTP</th><th>Key</th></tr></thead><tbody id="putOptionsTableBody"></tbody></table></div></div><div id="noOptionsMsg" style="text-align: center; margin-top: 20px; display: none;">No options to display.</div></div>
+        <!-- Section 4: Place Order -->
+        <div class="section"><h2>4. Place Orders <span style="color:red;">(LIVE)</span></h2><button id="placeOrderBtn" style="margin-top: 10px;" disabled>Place REAL Order (+0.50)</button></div>
+    </div> <!-- End mainAppSection -->
+
+
+    <!-- NEW Data View Section -->
+    <div id="dataViewSection" style="display: none;">
+        <h2>Stored Index Option Data</h2>
+        <div id="dataViewStatus" style="margin-bottom: 10px;"></div>
+        <div style="overflow-x: auto;"> <!-- Add scroll for table on smaller screens -->
+            <table id="storedDataTable">
+                <thead>
+                    <tr>
+                        <th>Trading Symbol</th>
+                        <th>Instrument Key</th>
+                        <th>Underlying</th>
+                        <th>Expiry</th>
+                        <th>Strike</th>
+                        <th>Type</th>
+                        <th>Lot Size</th>
+                        <th>Segment</th>
+                    </tr>
+                </thead>
+                <tbody id="storedDataTableBody">
+                    <!-- Data rows will be populated by JS -->
+                </tbody>
+            </table>
+        </div>
+        <div id="paginationControls">
+            <button id="prevPageBtn" disabled>« Previous</button>
+            <span id="pageInfo">Page 1 of 1</span>
+            <button id="nextPageBtn" disabled>Next »</button>
+        </div>
+    </div> <!-- End dataViewSection -->
+
+
+    <!-- Status Area (Common) -->
+    <div class="section">
+        <h2>Status Log</h2>
+        <div id="statusArea">Initializing...</div>
+    </div>
+</div>
+
+<script>
+    // --- Configuration (Identical) ---
+    const API_BASE_URL = 'https://api.upstox.com'; const LS_ACCESS_TOKEN_KEY = 'upstoxAccessToken'; const LS_UNDERLYING_SYMBOLS_KEY = 'upstoxIndexSymbols'; const DB_NAME = 'UpstoxInstrumentsDB'; const DB_VERSION = 1; const STORE_NAME = 'indexOptions'; const INSTRUMENT_DATA_KEY = 'allIndexOptionContracts'; const INDEX_UNDERLYINGS_TO_STORE = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX']; const ATM_OPTIONS_COUNT = 10;
+
+    // --- DOM Elements (Add new ones) ---
+    const mainAppSection = document.getElementById('mainAppSection');
+    const dataViewSection = document.getElementById('dataViewSection');
+    const viewToggleButton = document.getElementById('viewToggleButton');
+    const storedDataTableBody = document.getElementById('storedDataTableBody');
+    const paginationControls = document.getElementById('paginationControls');
+    const prevPageBtn = document.getElementById('prevPageBtn');
+    const nextPageBtn = document.getElementById('nextPageBtn');
+    const pageInfo = document.getElementById('pageInfo');
+    const dataViewStatus = document.getElementById('dataViewStatus'); // Status specific to data view
+    // (Keep other DOM elements)
+    const accessTokenInput = document.getElementById('accessTokenInput'); const saveTokenBtn = document.getElementById('saveTokenBtn'); const instrumentJsonFile = document.getElementById('instrumentJsonFile'); const storeJsonButton = document.getElementById('storeJsonButton'); const processingIndicator = document.getElementById('processingIndicator'); const fileStatus = document.getElementById('fileStatus'); const underlyingInput = document.getElementById('underlyingInput'); const underlyingList = document.getElementById('underlyingList'); const expiryDateInput = document.getElementById('expiryDateInput'); const fetchPricesBtn = document.getElementById('fetchPricesBtn'); const optionChainContainer = document.getElementById('optionChainContainer'); const callOptionsTableBody = document.getElementById('callOptionsTableBody'); const putOptionsTableBody = document.getElementById('putOptionsTableBody'); const noOptionsMsg = document.getElementById('noOptionsMsg'); const placeOrderBtn = document.getElementById('placeOrderBtn'); const statusArea = document.getElementById('statusArea');
+
+    // --- State Variables ---
+    let selectedJsonFile = null;
+    let dbInstance = null;
+    let knownUnderlyingSymbols = [];
+    // NEW Pagination State
+    let currentPage = 1;
+    const rowsPerPage = 25; // Adjust as needed
+    let allStoredDataCache = null; // Cache fetched data for pagination
+    let totalPages = 1;
+
+    // --- Utility & Status Functions (Identical) ---
+    const formatDateFromTimestamp = (ts) => { if (!ts) return 'N/A'; try { const d=new Date(ts); return `${d.getUTCFullYear()}-${(d.getUTCMonth()+1).toString().padStart(2,'0')}-${d.getUTCDate().toString().padStart(2,'0')}`; } catch (e) { return 'Invalid Date'; } };
+    const updateStatus = (message, type = 'info') => { console.log(`[${type.toUpperCase()}] ${message}`); const ts = new Date().toLocaleTimeString(); const nl = document.createElement('div'); nl.textContent = `${ts}: ${message}`; nl.className = `status-${type}`; statusArea.insertBefore(nl, statusArea.firstChild); if (statusArea.children.length > 100) { statusArea.removeChild(statusArea.lastChild); } };
+    const showProcessing = (isProcessing) => { processingIndicator.style.display = isProcessing ? 'inline' : 'none'; storeJsonButton.disabled = isProcessing; fetchPricesBtn.disabled = isProcessing || !canFetchOptions(); placeOrderBtn.disabled = isProcessing; underlyingInput.disabled = isProcessing; expiryDateInput.disabled = isProcessing; instrumentJsonFile.disabled = isProcessing; viewToggleButton.disabled = isProcessing; /* Disable toggle during processing */ };
+
+    // --- Local Storage & IndexedDB Functions (Identical) ---
+    const saveAccessToken = (token) => { localStorage.setItem(LS_ACCESS_TOKEN_KEY, token); updateStatus('Access token saved.', 'success'); }; const getAccessToken = () => localStorage.getItem(LS_ACCESS_TOKEN_KEY); const saveUnderlyingSymbols = (symbols) => { localStorage.setItem(LS_UNDERLYING_SYMBOLS_KEY, JSON.stringify(symbols)); updateStatus('Index symbols list cached.', 'info'); }; const getUnderlyingSymbols = () => { const s = localStorage.getItem(LS_UNDERLYING_SYMBOLS_KEY); try { return s ? JSON.parse(s) : null; } catch (e) { return null; } }; const openDB = () => new Promise((resolve, reject) => { if (dbInstance) { resolve(dbInstance); return; } updateStatus('Opening IndexedDB...', 'info'); const req = indexedDB.open(DB_NAME, DB_VERSION); req.onerror = (e) => reject(`DB error: ${e.target.error}`); req.onsuccess = (e) => { dbInstance = e.target.result; dbInstance.onerror = (ev) => { console.error("DB Error:", ev.target.error); updateStatus(`DB Error: ${ev.target.error}`, 'error'); }; updateStatus('IndexedDB opened.', 'success'); resolve(dbInstance); }; req.onupgradeneeded = (e) => { updateStatus('Upgrading/Creating DB schema...', 'info'); const db = e.target.result; if (!db.objectStoreNames.contains(STORE_NAME)) { db.createObjectStore(STORE_NAME); updateStatus(`Store '${STORE_NAME}' created.`, 'info'); } }; }); const closeDB = () => { if (dbInstance) { dbInstance.close(); dbInstance = null; updateStatus("IndexedDB closed.", "info"); }}; const storeDataInDB = (key, data) => new Promise(async (resolve, reject) => { let db; try { db = await openDB(); const tx = db.transaction([STORE_NAME], 'readwrite'); const store = tx.objectStore(STORE_NAME); const req = store.put(data, key); req.onerror = (e) => reject(`Error putting key '${key}': ${e.target.error}`); tx.oncomplete = () => resolve(); tx.onerror = (e) => reject(`Tx error storing key '${key}': ${e.target.error}`); } catch (error) { reject(`DB/Tx init failed: ${error}`); }}); const getDataFromDB = (key) => new Promise(async (resolve, reject) => { let db; try { db = await openDB(); const tx = db.transaction([STORE_NAME], 'readonly'); const store = tx.objectStore(STORE_NAME); const req = store.get(key); req.onerror = (e) => reject(`Error getting key '${key}': ${e.target.error}`); req.onsuccess = (e) => resolve(e.target.result); tx.onerror = (e) => reject(`Tx error retrieving key '${key}': ${e.target.error}`); } catch (error) { reject(`DB/Tx init failed get: ${error}`); }});
+
+
+    // --- UI Population ---
+    const populateUnderlyingDatalist = (symbolsArray) => { /* ... Identical ... */ underlyingList.innerHTML = ''; knownUnderlyingSymbols = []; if (symbolsArray && symbolsArray.length > 0) { knownUnderlyingSymbols = symbolsArray.sort(); knownUnderlyingSymbols.forEach(symbol => { const option = document.createElement('option'); option.value = symbol; underlyingList.appendChild(option); }); underlyingInput.disabled = false; updateStatus(`Index autocomplete populated with ${symbolsArray.length} symbols.`, 'info'); } else { underlyingInput.disabled = true; updateStatus('No index symbols available.', 'info'); } validateInputs(); };
+    const displayOptionData = (instrumentsToDisplay = []) => { /* ... Identical ... */ callOptionsTableBody.innerHTML = ''; putOptionsTableBody.innerHTML = ''; optionChainContainer.style.display = 'none'; noOptionsMsg.style.display = 'block'; placeOrderBtn.disabled = true; if (!instrumentsToDisplay || instrumentsToDisplay.length === 0) { updateStatus('No option data to display for the selected criteria.', 'info'); noOptionsMsg.textContent = 'No options found matching criteria, or LTP fetch failed.'; return; } instrumentsToDisplay.sort((a, b) => (a.strike_price || 0) - (b.strike_price || 0)); let callsExist = false, putsExist = false; instrumentsToDisplay.forEach(inst => { const ltp = inst.ltp !== undefined && inst.ltp !== null ? parseFloat(inst.ltp).toFixed(2) : 'N/A'; const strike = inst.strike_price !== undefined && inst.strike_price !== null ? parseFloat(inst.strike_price).toFixed(2) : 'N/A'; const instrumentKey = inst.instrument_key || 'N/A'; const optionType = inst.instrument_type ? inst.instrument_type.toUpperCase() : 'N/A'; const expiryDate = formatDateFromTimestamp(inst.expiry); const lotSize = inst.lot_size || 1; const row = document.createElement('tr'); const selectCell = document.createElement('td'); selectCell.classList.add('td-center'); const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.dataset.instrumentKey = instrumentKey; checkbox.dataset.ltp = ltp; checkbox.dataset.strike = strike; checkbox.dataset.type = optionType; checkbox.dataset.lotSize = lotSize; checkbox.disabled = (ltp === 'N/A'); if (checkbox.disabled) { row.style.opacity = '0.6'; } selectCell.appendChild(checkbox); const expiryCell = document.createElement('td'); expiryCell.textContent = expiryDate; expiryCell.classList.add('expiry-date'); const strikeCell = document.createElement('td'); strikeCell.textContent = strike; strikeCell.classList.add('strike-price'); const ltpCell = document.createElement('td'); ltpCell.textContent = ltp; ltpCell.classList.add('td-right'); const keyCell = document.createElement('td'); keyCell.textContent = instrumentKey; keyCell.classList.add('instrument-key-cell'); row.appendChild(selectCell); row.appendChild(expiryCell); row.appendChild(strikeCell); row.appendChild(ltpCell); row.appendChild(keyCell); if (optionType === 'CE') { callOptionsTableBody.appendChild(row); callsExist = true; } else if (optionType === 'PE') { putOptionsTableBody.appendChild(row); putsExist = true; } }); if (callsExist || putsExist) { optionChainContainer.style.display = 'flex'; noOptionsMsg.style.display = 'none'; placeOrderBtn.disabled = false; updateStatus(`Displayed ${instrumentsToDisplay.length} options for ${instrumentsToDisplay[0]?.underlying_symbol} expiry ${formatDateFromTimestamp(instrumentsToDisplay[0]?.expiry)}.`, 'info'); } };
+
+    // --- Input Validation (Identical) ---
+    const isValidUnderlyingSelected = () => { const currentVal = underlyingInput.value.trim().toUpperCase(); return currentVal && knownUnderlyingSymbols.some(sym => sym.toUpperCase() === currentVal); }; const isDateSelected = () => !!expiryDateInput.value; const canFetchOptions = () => isValidUnderlyingSelected() && isDateSelected(); const validateInputs = () => { const isValidUnderlying = isValidUnderlyingSelected(); const isValidDate = isDateSelected(); if (underlyingInput.value.trim() && !isValidUnderlying) { underlyingInput.style.borderColor = '#dc3545'; } else { underlyingInput.style.borderColor = '#ced4da'; } expiryDateInput.disabled = underlyingInput.disabled; fetchPricesBtn.disabled = !canFetchOptions(); };
+
+
+    // --- NEW Data View Functions ---
+    const displayPaginatedData = (page = 1) => {
+        currentPage = page;
+        storedDataTableBody.innerHTML = ''; // Clear previous page data
+        dataViewStatus.textContent = ''; // Clear previous status
+
+        if (!allStoredDataCache || allStoredDataCache.length === 0) {
+            dataViewStatus.textContent = 'No stored data found.';
+            paginationControls.style.display = 'none';
+            return;
+        }
+
+        paginationControls.style.display = 'block';
+        totalPages = Math.ceil(allStoredDataCache.length / rowsPerPage);
+        const startIndex = (currentPage - 1) * rowsPerPage;
+        const endIndex = startIndex + rowsPerPage;
+        const paginatedItems = allStoredDataCache.slice(startIndex, endIndex);
+
+        paginatedItems.forEach(inst => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${inst.trading_symbol || 'N/A'}</td>
+                <td class="instrument-key-cell">${inst.instrument_key || 'N/A'}</td>
+                <td>${inst.underlying_symbol || 'N/A'}</td>
+                <td class="expiry-date">${formatDateFromTimestamp(inst.expiry)}</td>
+                <td class="td-right">${inst.strike_price !== undefined && inst.strike_price !== null ? inst.strike_price.toFixed(2) : 'N/A'}</td>
+                <td class="td-center">${inst.instrument_type || 'INDEX' /* Assume INDEX if no type */}</td>
+                <td class="td-right">${inst.lot_size || 'N/A'}</td>
+                <td>${inst.segment || 'N/A'}</td>
+            `;
+            storedDataTableBody.appendChild(row);
+        });
+
+        // Update pagination controls
+        pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+        prevPageBtn.disabled = currentPage === 1;
+        nextPageBtn.disabled = currentPage === totalPages;
+    };
+
+    const loadAndDisplayStoredData = async () => {
+        updateStatus('Loading stored data for viewing...', 'info');
+        dataViewStatus.textContent = 'Loading data...';
+        storedDataTableBody.innerHTML = ''; // Clear table while loading
+        paginationControls.style.display = 'none'; // Hide controls while loading
+
+        try {
+            // Fetch data from IndexedDB (use cache if available)
+             if(!allStoredDataCache) { // Only fetch if cache is empty
+                allStoredDataCache = await getDataFromDB(INSTRUMENT_DATA_KEY);
+                if (!allStoredDataCache || !Array.isArray(allStoredDataCache)) {
+                    allStoredDataCache = []; // Ensure it's an array even if null/undefined
+                }
+                updateStatus(`Fetched ${allStoredDataCache.length} records from IndexedDB.`, 'info');
+             } else {
+                 updateStatus(`Using cached ${allStoredDataCache.length} stored records.`, 'info');
+             }
+
+            if (allStoredDataCache.length > 0) {
+                displayPaginatedData(1); // Display first page
+            } else {
+                dataViewStatus.textContent = 'No data found stored in IndexedDB.';
+                 paginationControls.style.display = 'none';
+            }
+        } catch (error) {
+            updateStatus(`Error loading stored data: ${error}`, 'error');
+            dataViewStatus.textContent = `Error loading data: ${error.message}`;
+             paginationControls.style.display = 'none';
+        }
+    };
+
+    const toggleView = (showData) => {
+        if (showData) {
+            mainAppSection.style.display = 'none';
+            dataViewSection.style.display = 'block';
+            viewToggleButton.textContent = 'Back to Order Placer';
+            loadAndDisplayStoredData(); // Load data when switching to this view
+        } else {
+            mainAppSection.style.display = 'block';
+            dataViewSection.style.display = 'none';
+            viewToggleButton.textContent = 'View Stored Data';
+            // Optionally clear cache when leaving view?
+            // allStoredDataCache = null;
+        }
+    };
+
+    // --- Event Handlers ---
+    saveTokenBtn.addEventListener('click', () => { /* Identical */ const t=accessTokenInput.value.trim(); if(t) saveAccessToken(t); else updateStatus('Enter token.','error');});
+    instrumentJsonFile.addEventListener('change', (event) => { /* Identical */ selectedJsonFile = event.target.files[0]; if(selectedJsonFile){ if(selectedJsonFile.type === 'application/json') { fileStatus.textContent = `Selected: ${selectedJsonFile.name} (${(selectedJsonFile.size / 1024 / 1024).toFixed(2)} MB).`; storeJsonButton.disabled=false; updateStatus('File selected. Click store.', 'info');} else {fileStatus.textContent = 'Invalid type.'; updateStatus('Invalid file type.', 'error'); selectedJsonFile=null; storeJsonButton.disabled=true; instrumentJsonFile.value='';} } else { selectedJsonFile=null; storeJsonButton.disabled=true; fileStatus.textContent = 'No file.'; } });
+    storeJsonButton.addEventListener('click', async () => { /* Identical: Filters index options */ if (!selectedJsonFile) { updateStatus('No file selected.', 'error'); return; } showProcessing(true); updateStatus(`Reading ${selectedJsonFile.name}...`, 'info'); const reader = new FileReader(); reader.onload = async (event) => { const fileContent = event.target.result; let jsonData; try { updateStatus('Parsing JSON...', 'info'); jsonData = JSON.parse(fileContent); if (!Array.isArray(jsonData)) throw new Error("JSON not an array."); updateStatus(`Parsed ${jsonData.length} records. Filtering index data...`, 'info'); const indexOptionsData = jsonData.filter(inst => inst.underlying_symbol && INDEX_UNDERLYINGS_TO_STORE.includes(inst.underlying_symbol.toUpperCase()) && (inst.instrument_type === 'CE' || inst.instrument_type === 'PE' || (!inst.strike_price && !inst.instrument_type && inst.segment?.endsWith('_INDEX'))) ); if (indexOptionsData.length === 0) { updateStatus(`No options OR index instrument found for specified indices in file.`, 'error'); fileStatus.textContent = `No relevant index data found in ${selectedJsonFile.name}.`; instrumentJsonFile.value = ''; selectedJsonFile = null; storeJsonButton.disabled = true; return; } updateStatus(`Storing ${indexOptionsData.length} relevant records...`, 'info'); await storeDataInDB(INSTRUMENT_DATA_KEY, indexOptionsData); allStoredDataCache = null; /* Clear cache after storing new data */ updateStatus('Index data stored!', 'success'); updateStatus('Deriving index symbols...', 'info'); const underlyingSymbols = [...new Set(indexOptionsData.filter(inst => inst.instrument_type === 'CE' || inst.instrument_type === 'PE').map(inst => inst.underlying_symbol))]; saveUnderlyingSymbols(underlyingSymbols); populateUnderlyingDatalist(underlyingSymbols); fileStatus.textContent = `Stored ${indexOptionsData.length} records from ${selectedJsonFile.name}.`; instrumentJsonFile.value=''; selectedJsonFile=null; storeJsonButton.disabled=true; } catch (error) { updateStatus(`Error storing JSON: ${error}`, 'error'); fileStatus.textContent = 'Error storing file data.'; } finally { showProcessing(false); } }; reader.onerror = () => { updateStatus(`Error reading file: ${reader.error}`, 'error'); showProcessing(false); }; reader.readAsText(selectedJsonFile); });
+    underlyingInput.addEventListener('input', validateInputs);
+    underlyingInput.addEventListener('change', validateInputs);
+    expiryDateInput.addEventListener('change', validateInputs);
+    fetchPricesBtn.addEventListener('click', async () => { /* Identical: Includes ATM fallback logic */ const selectedUnderlying = underlyingInput.value.trim().toUpperCase(); const selectedDateStr = expiryDateInput.value; const accessToken = getAccessToken(); if (!canFetchOptions()) { updateStatus('Select valid index and date.', 'error'); return; } if (!accessToken) { updateStatus('Access token missing.', 'error'); return; } showProcessing(true); updateStatus(`Fetching data for ${selectedUnderlying} expiry ${selectedDateStr}...`, 'info'); displayOptionData([]); let underlyingInstrumentKey = null; let expiryOptions = []; let keysToFetchLtp = []; let underlyingLtp = null; try { const allStoredIndexData = await getDataFromDB(INSTRUMENT_DATA_KEY); if (!allStoredIndexData || !Array.isArray(allStoredIndexData)) throw new Error('No index data in DB.'); updateStatus(`Loaded ${allStoredIndexData.length} records. Filtering...`, 'info'); allStoredIndexData.forEach(inst => { if (inst.underlying_symbol?.toUpperCase() === selectedUnderlying) { if (!inst.strike_price && !inst.instrument_type && inst.segment?.endsWith('_INDEX')) { if (!underlyingInstrumentKey) { underlyingInstrumentKey = inst.instrument_key; console.log(`Found index key in JSON: ${underlyingInstrumentKey}`, inst); } } else if ((inst.instrument_type === 'CE' || inst.instrument_type === 'PE') && formatDateFromTimestamp(inst.expiry) === selectedDateStr) { expiryOptions.push(inst); } } }); if (!underlyingInstrumentKey) { underlyingInstrumentKey = `NSE_INDEX|${selectedUnderlying}`; updateStatus(`Index instrument not found. Guessing key: ${underlyingInstrumentKey}.`, 'warn'); } else { updateStatus(`Using index key: ${underlyingInstrumentKey}`, 'info'); } if (expiryOptions.length === 0) { updateStatus(`No options found for ${selectedUnderlying} expiry ${selectedDateStr}.`, 'info'); noOptionsMsg.textContent = `No stored options found for ${selectedUnderlying} on ${selectedDateStr}.`; noOptionsMsg.style.display = 'block'; optionChainContainer.style.display = 'none'; return; } keysToFetchLtp = [underlyingInstrumentKey, ...expiryOptions.map(inst => inst.instrument_key)]; updateStatus(`Found ${expiryOptions.length} options. Fetching ${keysToFetchLtp.length} LTPs...`, 'info'); const ltpApiUrl = `${API_BASE_URL}/v2/market-quote/ltp?${keysToFetchLtp.map(key => `instrument_key=${encodeURIComponent(key)}`).join('&')}`; updateStatus(`Fetching REAL LTPs from: ${ltpApiUrl}`, 'info'); const response = await fetch(ltpApiUrl, { headers: {'Authorization':`Bearer ${accessToken}`,'Accept':'application/json'} }); if (!response.ok) { let eMsg=`API LTP Error: ${response.status}`; try {const b=await response.json(); eMsg+=` - ${b.message||JSON.stringify(b)}`} catch(e){} throw new Error(eMsg); } const ltpData = await response.json(); if (ltpData.status !== 'success') { throw new Error(`LTP API Error: ${ltpData.message || JSON.stringify(ltpData)}`); } updateStatus('Fetched REAL LTP data.', 'success'); const underlyingLtpData = ltpData.data[underlyingInstrumentKey]; if (!underlyingLtpData) { updateStatus(`Underlying key '${underlyingInstrumentKey}' not in LTP response. No ATM filtering.`, 'warn'); underlyingLtp = null; } else if (underlyingLtpData.last_price === null || underlyingLtpData.last_price === undefined) { updateStatus(`LTP for underlying '${underlyingInstrumentKey}' is null. No ATM filtering.`, 'warn'); underlyingLtp = null; console.warn("Null Underlying LTP Data:", underlyingLtpData); } else { underlyingLtp = underlyingLtpData.last_price; updateStatus(`Underlying LTP: ${underlyingLtp}`, 'info'); } let optionsWithLtp = expiryOptions.map(inst => ({ ...inst, ltp: ltpData.data[inst.instrument_key]?.last_price })); let finalOptionsToDisplay = []; if (underlyingLtp !== null) { updateStatus(`Filtering top ${ATM_OPTIONS_COUNT} ATM options...`, 'info'); optionsWithLtp = optionsWithLtp.filter(inst => inst.ltp !== null && inst.ltp !== undefined).map(inst => ({ ...inst, atm_diff: inst.strike_price ? Math.abs(inst.strike_price - underlyingLtp) : Infinity })); optionsWithLtp.sort((a, b) => a.atm_diff - b.atm_diff); finalOptionsToDisplay = optionsWithLtp.slice(0, ATM_OPTIONS_COUNT); if(finalOptionsToDisplay.length < optionsWithLtp.length && finalOptionsToDisplay.length > 0) { updateStatus(`Filtered down to ${finalOptionsToDisplay.length} ATM options.`, 'info'); } else if (finalOptionsToDisplay.length === 0 && expiryOptions.length > 0) { updateStatus('Could not determine ATM (maybe option LTPs null?). Displaying unfiltered options.', 'warn'); finalOptionsToDisplay = expiryOptions.map(inst => ({ ...inst, ltp: ltpData.data[inst.instrument_key]?.last_price })); } } else { finalOptionsToDisplay = optionsWithLtp; updateStatus(`Displaying all ${finalOptionsToDisplay.length} fetched options due to missing index LTP.`, 'info'); } displayOptionData(finalOptionsToDisplay); } catch (error) { updateStatus(`Error fetching options: ${error}`, 'error'); displayOptionData([]); noOptionsMsg.textContent = `Error fetching options: ${error.message}`; noOptionsMsg.style.display = 'block'; optionChainContainer.style.display = 'none'; } finally { showProcessing(false); } });
+    placeOrderBtn.addEventListener('click', async () => { /* Identical: REAL API */ const selectedCheckboxes = document.querySelectorAll('#optionChainContainer input[type="checkbox"]:checked:not(:disabled)'); const accessToken = getAccessToken(); if (selectedCheckboxes.length === 0) { updateStatus('No valid options selected.', 'error'); return; } if (!accessToken) { updateStatus('Access token missing.', 'error'); return; } showProcessing(true); updateStatus(`Preparing REAL LIMIT orders for ${selectedCheckboxes.length} option(s)...`); let ordersPlaced = 0, ordersFailed = 0; for (const checkbox of selectedCheckboxes) { const instrumentKey = checkbox.dataset.instrumentKey, ltpString = checkbox.dataset.ltp, lotSize = parseInt(checkbox.dataset.lotSize || '1', 10), strike = checkbox.dataset.strike, type = checkbox.dataset.type; if (ltpString === 'N/A') { updateStatus(`Skipping ${instrumentKey} - LTP N/A.`, 'info'); ordersFailed++; continue; } const ltp = parseFloat(ltpString); const priceAdjustment = 0.50; const calculatedLimitPrice = (ltp + priceAdjustment).toFixed(2); const quantity = lotSize; const placeOrderPayload = { quantity: quantity, product: "I", validity: "DAY", price: parseFloat(calculatedLimitPrice), order_type: "LIMIT", instrument_token: instrumentKey, transaction_type: "BUY" }; updateStatus(`Attempting REAL LIMIT Order: ${instrumentKey} Qty:${quantity} @${calculatedLimitPrice}`, 'info'); const orderApiUrl = `${API_BASE_URL}/v2/order/place`; try { updateStatus(`Sending REAL order for ${instrumentKey}...`); const response = await fetch(orderApiUrl, { method: 'POST', headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(placeOrderPayload) }); const responseData = await response.json(); if (!response.ok || responseData.status?.toLowerCase() !== 'success') { let errorDetail = responseData.errors?.[0]?.message || responseData.message || responseData.error_message || JSON.stringify(responseData); let errorMsg = `API Order Error: ${response.status} - ${errorDetail}`; throw new Error(errorMsg); } updateStatus(`REAL Order Success: ${instrumentKey} @ ${calculatedLimitPrice}. Order ID: ${responseData.data?.order_id || 'N/A'}`, 'success'); ordersPlaced++; checkbox.checked = false; } catch (error) { updateStatus(`REAL Order Failed ${instrumentKey}: ${error.message || error}`, 'error'); ordersFailed++; } } updateStatus(`REAL Order placement finished. Success: ${ordersPlaced}, Failed/Skipped: ${ordersFailed}.`); showProcessing(false); });
+
+    // NEW Event Listeners for View Toggling and Pagination
+    viewToggleButton.addEventListener('click', () => {
+        const isDataViewVisible = dataViewSection.style.display === 'block';
+        toggleView(!isDataViewVisible); // Toggle to the other view
+    });
+
+    prevPageBtn.addEventListener('click', () => {
+        if (currentPage > 1) {
+            displayPaginatedData(currentPage - 1);
+        }
+    });
+
+    nextPageBtn.addEventListener('click', () => {
+        if (currentPage < totalPages) {
+            displayPaginatedData(currentPage + 1);
+        }
+    });
+
+
+    // --- Initialization ---
+    const initialize = async () => {
+        updateStatus('Initializing...', 'info');
+        if (!window.indexedDB) { updateStatus("IndexedDB not supported!", "error"); return; }
+        else { updateStatus("IndexedDB supported.", "success"); }
+        const storedToken = getAccessToken(); if (storedToken) { accessTokenInput.value = storedToken; updateStatus('Token loaded from LS.', 'info'); }
+        const cachedSymbols = getUnderlyingSymbols(); if (cachedSymbols) { populateUnderlyingDatalist(cachedSymbols); updateStatus('Index symbols loaded from LS cache.', 'info'); }
+        else { updateStatus('No cached index symbols. Upload JSON.', 'info'); }
+        validateInputs();
+        toggleView(false); // Ensure main view is shown initially
+        updateStatus('Initialization complete.', 'success');
+    };
+
+    // --- Run ---
+    document.addEventListener('DOMContentLoaded', initialize);
+
+</script>
+
+</body>
+</html>

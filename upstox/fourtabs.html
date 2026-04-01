@@ -1,0 +1,18 @@
+// --- Load URLs from LocalStorage on Page Load ---
+urlInputs.forEach(input => {
+    const savedUrl = localStorage.getItem(input.id);
+    if (savedUrl) {
+        input.value = savedUrl;
+        const loadButton = document.querySelector(`button[data-input-id="${input.id}"]`);
+        if (loadButton) {
+            const iframeId = loadButton.getAttribute('data-iframe-target');
+            const iframe = document.getElementById(iframeId);
+            if (iframe) {
+                // const proxyUrl = `http://localhost:3001/proxy?url=${encodeURIComponent(savedUrl)}`;
+                const proxyUrl = new URL('http://localhost:3001/proxy');
+                proxyUrl.searchParams.append('url', savedUrl);
+                iframe.src = proxyUrl.toString();
+            }
+        }
+    }
+});

@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upstox UI Replica - Full Simulation</title>
+    <style>
+        :root {
+            --bg-primary: #1A1A2E; --bg-secondary: #252538; --bg-tertiary: #1E1E2F;
+            --text-primary: #E0E0E0; --text-secondary: #A0A0B0; --text-tertiary: #707080;
+            --accent-purple: #805AD5; --accent-purple-light: #9F7AEA;
+            --positive-green: #4CAF50; --negative-red: #F44336;
+            --border-color: #333348; --hover-bg: #303045;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-primary);
+            color: var(--text-primary); font-size: 14px; display: flex; flex-direction: column;
+            height: 100vh; overflow: hidden;
+        }
+        .app-header {
+            background-color: var(--bg-tertiary); padding: 10px 20px; display: flex;
+            align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-color); height: 60px;
+        }
+        .header-left { display: flex; align-items: center; }
+        .market-info { display: flex; align-items: center; margin-right: 20px; }
+        .market-info .name { font-weight: bold; margin-right: 8px; }
+        .market-info .value { font-weight: bold; margin-right: 5px; }
+        .market-info .change { font-size: 12px; }
+        .market-info .change.positive { color: var(--positive-green); }
+        .market-info .change.negative { color: var(--negative-red); }
+        .header-nav ul { list-style: none; display: flex; }
+        .header-nav ul li a { color: var(--text-secondary); text-decoration: none; padding: 10px 15px; font-weight: 500; }
+        .header-nav ul li a.active, .header-nav ul li a:hover { color: var(--text-primary); border-bottom: 2px solid var(--accent-purple); }
+        .up-logo { background-color: var(--accent-purple); color: white; padding: 5px 8px; border-radius: 4px; font-weight: bold; margin-right: 15px; font-size: 12px; }
+        .header-right { display: flex; align-items: center; }
+        .header-right .icon-button { background: none; border: none; color: var(--text-secondary); font-size: 18px; margin-left: 15px; cursor: pointer; }
+        .header-right .icon-button:hover { color: var(--text-primary); }
+        .header-right .funds-button { background-color: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-primary); padding: 8px 12px; border-radius: 4px; margin-left: 15px; cursor: pointer; font-size: 12px; }
+        .header-right .funds-button:hover { background-color: var(--hover-bg); }
+        .user-info { display: flex; align-items: center; color: var(--text-secondary); margin-left: 15px; }
+        .user-info .user-icon { width: 24px; height: 24px; background-color: var(--accent-purple); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: white; font-size: 12px; margin-right: 8px; }
+        .app-body { display: flex; flex-grow: 1; overflow: hidden; }
+        .sidebar { width: 280px; background-color: var(--bg-tertiary); padding: 15px 0; display: flex; flex-direction: column; border-right: 1px solid var(--border-color); overflow-y: auto; }
+        .sidebar-header { display: flex; justify-content: space-between; align-items: center; padding: 0 15px 15px 15px; border-bottom: 1px solid var(--border-color); margin-bottom: 10px; }
+        .sidebar-header h3 { font-size: 13px; font-weight: 500; }
+        .sidebar-header .by-you { font-size: 10px; color: var(--text-secondary); }
+        .sidebar-header .actions button { background: none; border: none; color: var(--text-secondary); font-size: 18px; margin-left: 8px; cursor: pointer; }
+        .sidebar-header .actions button.add-btn { background-color: var(--accent-purple); color: white; border-radius: 4px; width: 28px; height: 28px; font-size: 20px; }
+        .watchlist-item { padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; border-bottom: 1px solid var(--border-color); }
+        .watchlist-item:last-child { border-bottom: none; }
+        .watchlist-item:hover { background-color: var(--hover-bg); }
+        .watchlist-item .stock-info .name { font-weight: 500; font-size: 13px; }
+        .watchlist-item .stock-info .exchange { font-size: 10px; color: var(--text-secondary); }
+        .watchlist-item .price-info { text-align: right; }
+        .watchlist-item .price-info .price { font-weight: 500; }
+        .watchlist-item .price-info .change { font-size: 11px; color: var(--text-secondary); }
+        .watchlist-item .price-info .price.positive, .watchlist-item .price-info .change .positive { color: var(--positive-green); }
+        .watchlist-item .price-info .price.negative, .watchlist-item .price-info .change .negative { color: var(--negative-red); }
+        .main-content { flex-grow: 1; padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+        .notification-banner { background-color: var(--bg-secondary); padding: 10px 20px; font-size: 13px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-color); }
+        .notification-banner .msg-content { display: flex; align-items: center; }
+        .notification-banner .controls span { margin: 0 5px; color: var(--text-secondary); }
+        .notification-banner .live-badge { background-color: var(--negative-red); color: white; font-size: 10px; padding: 2px 5px; border-radius: 3px; margin-right: 8px; font-weight: bold; }
+        .notification-banner a { color: var(--accent-purple-light); text-decoration: none; font-weight: bold; }
+        .notification-banner .close-btn { background: none; border: none; color: var(--text-secondary); font-size: 18px; cursor: pointer; }
+        .holdings-section { padding: 20px; flex-grow: 1; overflow-y: auto; }
+        .holdings-tabs { display: flex; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); }
+        .holdings-tabs button { background: none; border: none; color: var(--text-secondary); padding: 10px 15px; cursor: pointer; font-size: 14px; font-weight: 500; border-bottom: 2px solid transparent; }
+        .holdings-tabs button.active, .holdings-tabs button:hover { color: var(--text-primary); border-bottom-color: var(--accent-purple); }
+        .holdings-tabs button.active { font-weight: bold; }
+        .holdings-summary { display: flex; justify-content: space-between; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border-color); }
+        .summary-item .label { font-size: 12px; color: var(--text-secondary); margin-bottom: 5px; }
+        .summary-item .value { font-size: 18px; font-weight: bold; }
+        .summary-item .value.positive { color: var(--positive-green); }
+        .summary-item .value.negative { color: var(--negative-red); }
+        .summary-item .sub-value { font-size: 12px; }
+        .summary-item .sub-value.positive { color: var(--positive-green); }
+        .summary-item .sub-value.negative { color: var(--negative-red); }
+        .holdings-table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .holdings-table-header .symbol-count { font-size: 12px; color: var(--text-secondary); }
+        .holdings-table-header .table-actions button { background: none; border: none; color: var(--text-secondary); font-size: 16px; margin-left: 12px; cursor: pointer; }
+        .holdings-table-header .table-actions button:hover { color: var(--text-primary); }
+        .holdings-table-header .authorise-btn { background-color: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-primary); padding: 6px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+        .holdings-table-header .authorise-btn:hover { background-color: var(--hover-bg); }
+        .holdings-table table { width: 100%; border-collapse: collapse; }
+        .holdings-table th, .holdings-table td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--border-color); font-size: 13px; }
+        .holdings-table th { color: var(--text-secondary); font-weight: 500; font-size: 11px; text-transform: uppercase; }
+        .holdings-table td .stock-name { font-weight: 500; }
+        .holdings-table td .exchange-info { font-size: 10px; color: var(--text-secondary); }
+        .holdings-table td.align-right, .holdings-table th.align-right { text-align: right; }
+        .holdings-table td.positive { color: var(--positive-green); }
+        .holdings-table td.negative { color: var(--negative-red); }
+        .holdings-table .actions-cell button { background: none; border: 1px solid var(--text-tertiary); color: var(--text-secondary); padding: 4px 6px; border-radius: 3px; cursor: pointer; font-size: 14px; }
+        .holdings-table .actions-cell button:hover { border-color: var(--text-primary); color: var(--text-primary); }
+    </style>
+</head>
+<body>
+
+    <header class="app-header">
+        <div class="header-left">
+            <div class="market-info">
+                <span class="name">NIFTY</span>
+                <span class="value" id="nifty-value">24,379.60</span>
+                <span class="change negative" id="nifty-change-container">
+                    <span id="nifty-change-pct">-0.33%</span> <span id="nifty-change-abs">-81.55</span>
+                </span>
+            </div>
+            <div class="market-info">
+                <span class="name">SENSEX</span>
+                <span class="value" id="sensex-value">80,641.07</span>
+                <span class="change negative" id="sensex-change-container">
+                    <span id="sensex-change-pct">-0.19%</span> <span id="sensex-change-abs">-155.77</span>
+                </span>
+            </div>
+        </div>
+        <nav class="header-nav">
+             <ul>
+                <li><span class="up-logo">up</span></li>
+                <li><a href="#">TBT Charts</a></li><li><a href="#">Options</a></li><li><a href="#">Discover</a></li>
+                <li><a href="#">Orders</a></li><li><a href="#">Positions</a></li><li><a href="#" class="active">Holdings</a></li>
+            </ul>
+        </nav>
+        <div class="header-right">
+            <button class="icon-button">✨</button><button class="icon-button">⋮ More</button>
+            <button class="icon-button">❔ Help</button>
+            <div class="user-info"><span class="user-icon">KT</span><span>Kamisetty T.</span> ▼</div>
+            <button class="funds-button">💼 Funds</button>
+        </div>
+    </header>
+
+    <div class="app-body">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div>
+                    <h3>Top 20 by market cap <span style="color: var(--text-secondary); font-weight: normal;">41 / 100</span></h3>
+                    <span class="by-you">by You</span>
+                </div>
+                <div class="actions"><button>⋮</button><button>≡</button><button class="add-btn">+</button></div>
+            </div>
+            <div class="watchlist-scroller">
+                <!-- Watchlist Items -->
+                <div class="watchlist-item" data-stock-id="mazdockwl"> <!-- Changed ID slightly to avoid clash if holdings had 'mazdock' -->
+                    <div class="stock-info"><div class="name">MAZDOCK</div><div class="exchange">NSE EQ</div></div>
+                    <div class="price-info">
+                        <div class="price negative" id="mazdockwl-price">2,972.60</div>
+                        <div class="change" id="mazdockwl-change-container"><span id="mazdockwl-change-abs" class="negative">-126.90</span> (<span id="mazdockwl-change-pct" class="negative">-4.09%</span>)</div>
+                    </div>
+                </div>
+                <div class="watchlist-item" data-stock-id="igl">
+                    <div class="stock-info"><div class="name">IGL</div><div class="exchange">NSE EQ</div></div>
+                    <div class="price-info">
+                        <div class="price negative" id="igl-price">329.40</div>
+                        <div class="change" id="igl-change-container"><span id="igl-change-abs" class="negative">-14.35</span> (<span id="igl-change-pct" class="negative">-4.17%</span>)</div>
+                    </div>
+                </div>
+                <div class="watchlist-item" data-stock-id="zentec">
+                    <div class="stock-info"><div class="name">ZENTEC</div><div class="exchange">NSE EQ</div></div>
+                    <div class="price-info">
+                        <div class="price negative" id="zentec-price">1,361.60</div>
+                        <div class="change" id="zentec-change-container"><span id="zentec-change-abs" class="negative">-16.60</span> (<span id="zentec-change-pct" class="negative">-1.20%</span>)</div>
+                    </div>
+                </div>
+                 <div class="watchlist-item" data-stock-id="adanientwl"> <!-- Changed ID slightly -->
+                    <div class="stock-info"><div class="name">ADANIENT</div><div class="exchange">NSE EQ</div></div>
+                    <div class="price-info">
+                        <div class="price negative" id="adanientwl-price">2,354.00</div>
+                        <div class="change" id="adanientwl-change-container"><span id="adanientwl-change-abs" class="negative">-101.50</span> (<span id="adanientwl-change-pct" class="negative">-4.13%</span>)</div>
+                    </div>
+                </div>
+                <!-- ... Other watchlist items with unique data-stock-id and element ids ... -->
+                 <div class="watchlist-item" data-stock-id="adiensol">
+                    <div class="stock-info"><div class="name">ADIENSOL</div><div class="exchange">NSE EQ</div></div>
+                    <div class="price-info">
+                        <div class="price negative" id="adiensol-price">907.40</div>
+                        <div class="change" id="adiensol-change-container"><span id="adiensol-change-abs" class="negative">-29.80</span> (<span id="adiensol-change-pct" class="negative">-3.18%</span>)</div>
+                    </div>
+                </div>
+                 <div class="watchlist-item" data-stock-id="adanigreen">
+                    <div class="stock-info"><div class="name">ADANIGREEN</div><div class="exchange">NSE EQ</div></div>
+                    <div class="price-info">
+                        <div class="price negative" id="adanigreen-price">923.25</div>
+                        <div class="change" id="adanigreen-change-container"><span id="adanigreen-change-abs" class="negative">-42.45</span> (<span id="adanigreen-change-pct" class="negative">-4.40%</span>)</div>
+                    </div>
+                </div>
+                 <div class="watchlist-item" data-stock-id="adaniports">
+                    <div class="stock-info"><div class="name">ADANIPORTS</div><div class="exchange">NSE EQ</div></div>
+                    <div class="price-info">
+                        <div class="price negative" id="adaniports-price">1,320.80</div>
+                        <div class="change" id="adaniports-change-container"><span id="adaniports-change-abs" class="negative">-26.30</span> (<span id="adaniports-change-pct" class="negative">-1.95%</span>)</div>
+                    </div>
+                </div>
+                 <div class="watchlist-item" data-stock-id="asianpaint">
+                    <div class="stock-info"><div class="name">ASIANPAINT</div><div class="exchange">NSE EQ</div></div>
+                    <div class="price-info">
+                        <div class="price negative" id="asianpaint-price">2,418.00</div>
+                        <div class="change" id="asianpaint-change-container"><span id="asianpaint-change-abs" class="negative">-18.90</span> (<span id="asianpaint-change-pct" class="negative">-0.78%</span>)</div>
+                    </div>
+                </div>
+                <div class="watchlist-item" data-stock-id="atgl">
+                    <div class="stock-info"><div class="name">ATGL</div><div class="exchange">NSE EQ</div></div>
+                    <div class="price-info">
+                        <div class="price negative" id="atgl-price">632.95</div>
+                        <div class="change" id="atgl-change-container"><span id="atgl-change-abs" class="negative">-32.60</span> (<span id="atgl-change-pct" class="negative">-4.90%</span>)</div>
+                    </div>
+                </div>
+                <div class="watchlist-item" data-stock-id="awl">
+                    <div class="stock-info"><div class="name">AWL</div><div class="exchange">NSE EQ</div></div>
+                    <div class="price-info">
+                        <div class="price negative" id="awl-price">258.50</div>
+                        <div class="change" id="awl-change-container"><span id="awl-change-abs" class="negative">-15.55</span> (<span id="awl-change-pct" class="negative">-5.67%</span>)</div>
+                    </div>
+                </div>
+                 <div class="watchlist-item" data-stock-id="axisbank">
+                    <div class="stock-info"><div class="name">AXISBANK</div><div class="exchange">NSE EQ</div></div>
+                    <div class="price-info">
+                        <div class="price negative" id="axisbank-price">1,161.40</div>
+                        <div class="change" id="axisbank-change-container"><span id="axisbank-change-abs" class="negative">-11.80</span> (<span id="axisbank-change-pct" class="negative">-1.01%</span>)</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <div class="notification-banner">
+                <div class="msg-content">
+                    <span class="controls">❮ 1/2 ❯</span><span class="live-badge">LIVE</span>
+                    Closing soon: Get up to 10.75% returns with Muthoot Mini Financiers Ltd. <a href="#">Invest Now</a>
+                </div>
+                <button class="close-btn">✕</button>
+            </div>
+
+            <div class="holdings-section">
+                <div class="holdings-tabs">
+                    <button class="active" id="holdings-tab-all">All (4)</button>
+                    <button id="holdings-tab-demat">Demat (4)</button>
+                    <button>Pledged</button>
+                </div>
+
+                <div class="holdings-summary">
+                    <div class="summary-item">
+                        <div class="label">Invested</div>
+                        <div class="value" id="summary-invested">4,99,52,000.00</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="label">Current</div>
+                        <div class="value" id="summary-current-value">5,32,68,658.00</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="label">Overall P&L</div>
+                        <div class="value positive" id="summary-overall-pnl-container">
+                            <span id="summary-overall-pnl-abs">+33,16,658.00</span>
+                            <span class="sub-value positive">(<span id="summary-overall-pnl-pct">+6.64%</span>)</span>
+                        </div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="label">Day P&L</div>
+                        <div class="value negative" id="summary-day-pnl-container">
+                            <span id="summary-day-pnl-abs">-9,68,861.80</span>
+                            <span class="sub-value negative">(<span id="summary-day-pnl-pct">-1.79%</span>)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="holdings-table-header">
+                    <span class="symbol-count" id="holdings-symbol-count">Symbol (4)</span>
+                    <div class="table-actions">
+                        <button class="authorise-btn">🔒 Authorise</button>
+                        <button title="Refresh">🔄</button><button title="Toggle columns">📊</button>
+                        <button title="Expand/Fullscreen">⤢</button><button title="Close">✕</button>
+                    </div>
+                </div>
+
+                <div class="holdings-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th id="holdings-table-header-symbol">Symbol (4)</th>
+                                <th class="align-right">Net Qty</th> <th class="align-right">Avg. Price</th>
+                                <th class="align-right">LTP</th> <th class="align-right">Current Value</th>
+                                <th class="align-right">Day P&L</th> <th class="align-right">Day %</th>
+                                <th class="align-right">Overall P&L</th> <th class="align-right">Overall %</th>
+                                <th class="align-right"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="holdings-table-body">
+                            <tr data-holding-id="reliance">
+                                <td><div class="stock-name">RELIANCE</div><div class="exchange-info">NSE EQ</div></td>
+                                <td class="align-right" id="reliance-qty">5,250</td><td class="align-right" id="reliance-avg-price">2,800.00</td>
+                                <td class="align-right" id="reliance-ltp">2,900.00</td><td class="align-right" id="reliance-current-value">1,29,05,000.00</td>
+                                <td class="align-right positive" id="reliance-day-pnl-value">+64,213.50</td><td class="align-right positive" id="reliance-day-pnl-percent">+0.50%</td>
+                                <td class="align-right positive" id="reliance-overall-pnl-value">+4,45,000.00</td><td class="align-right positive" id="reliance-overall-pnl-percent">+3.57%</td>
+                                <td class="align-right actions-cell"><button>...</button></td>
+                            </tr>
+                             <tr data-holding-id="adanienth"> <!-- Suffix 'h' for holding to distinguish from watchlist adanientwl -->
+                                <td><div class="stock-name">ADANIENT</div><div class="exchange-info">NSE EQ</div></td>
+                                <td class="align-right" id="adanienth-qty">5,680</td><td class="align-right" id="adanienth-avg-price">2,200.00</td>
+                                <td class="align-right" id="adanienth-ltp">2,354.00</td><td class="align-right" id="adanienth-current-value">1,33,70,720.00</td>
+                                <td class="align-right negative" id="adanienth-day-pnl-value">-5,76,520.00</td><td class="align-right negative" id="adanienth-day-pnl-percent">-4.13%</td>
+                                <td class="align-right positive" id="adanienth-overall-pnl-value">+8,74,720.00</td><td class="align-right positive" id="adanienth-overall-pnl-percent">+7.00%</td>
+                                <td class="align-right actions-cell"><button>...</button></td>
+                            </tr>
+                            <tr data-holding-id="dixon">
+                                <td><div class="stock-name">DIXON</div><div class="exchange-info">NSE EQ</div></td>
+                                <td class="align-right" id="dixon-qty">1,470</td><td class="align-right" id="dixon-avg-price">8,500.00</td>
+                                <td class="align-right" id="dixon-ltp">9,000.00</td><td class="align-right" id="dixon-current-value">1,32,30,000.00</td>
+                                <td class="align-right positive" id="dixon-day-pnl-value">+1,30,991.70</td><td class="align-right positive" id="dixon-day-pnl-percent">+1.00%</td>
+                                <td class="align-right positive" id="dixon-overall-pnl-value">+7,35,000.00</td><td class="align-right positive" id="dixon-overall-pnl-percent">+5.88%</td>
+                                <td class="align-right actions-cell"><button>...</button></td>
+                            </tr>
+                            <tr data-holding-id="mazdockh"> <!-- Suffix 'h' for holding -->
+                                <td><div class="stock-name">MAZDOCK</div><div class="exchange-info">NSE EQ</div></td>
+                                <td class="align-right" id="mazdockh-qty">4,630</td><td class="align-right" id="mazdockh-avg-price">2,700.00</td>
+                                <td class="align-right" id="mazdockh-ltp">2,972.60</td><td class="align-right" id="mazdockh-current-value">1,37,62,938.00</td>
+                                <td class="align-right negative" id="mazdockh-day-pnl-value">-5,87,547.00</td><td class="align-right negative" id="mazdockh-day-pnl-percent">-4.09%</td>
+                                <td class="align-right positive" id="mazdockh-overall-pnl-value">+12,61,938.00</td> <!-- Corrected data -->
+                                <td class="align-right positive" id="mazdockh-overall-pnl-percent">+10.09%</td>
+                                <td class="align-right actions-cell"><button>...</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const appData = {
+        indices: [], // Will be populated
+        watchlist: [], // Will be populated
+        holdings: [], // Will be populated
+        summary: {
+            investedEl: document.getElementById('summary-invested'),
+            currentValueEl: document.getElementById('summary-current-value'),
+            overallPnlContainerEl: document.getElementById('summary-overall-pnl-container'),
+            overallPnlAbsEl: document.getElementById('summary-overall-pnl-abs'),
+            overallPnlPctEl: document.getElementById('summary-overall-pnl-pct'),
+            dayPnlContainerEl: document.getElementById('summary-day-pnl-container'),
+            dayPnlAbsEl: document.getElementById('summary-day-pnl-abs'),
+            dayPnlPctEl: document.getElementById('summary-day-pnl-pct'),
+        }
+    };
+    
+    // --- Populate Indices ---
+    const indexDataRaw = [
+        { id: 'nifty', currentValue: 24379.60, initialChangeAbs: -81.55 },
+        { id: 'sensex', currentValue: 80641.07, initialChangeAbs: -155.77 }
+    ];
+    indexDataRaw.forEach(idx => {
+        const indexObj = {
+            id: idx.id,
+            valueEl: document.getElementById(`${idx.id}-value`),
+            changeContainerEl: document.getElementById(`${idx.id}-change-container`),
+            changePctEl: document.getElementById(`${idx.id}-change-pct`),
+            changeAbsEl: document.getElementById(`${idx.id}-change-abs`),
+            currentValue: idx.currentValue,
+            initialChangeAbs: idx.initialChangeAbs,
+        };
+        indexObj.previousDayClose = indexObj.currentValue - indexObj.initialChangeAbs;
+        appData.indices.push(indexObj);
+    });
+
+    // --- Populate Watchlist ---
+    document.querySelectorAll('.watchlist-item').forEach(item => {
+        const id = item.dataset.stockId;
+        if (!id) return; // Skip if no data-stock-id
+        const priceEl = document.getElementById(`${id}-price`);
+        const changeContainerEl = document.getElementById(`${id}-change-container`);
+        const changeAbsEl = document.getElementById(`${id}-change-abs`);
+        const changePctEl = document.getElementById(`${id}-change-pct`);
+
+        if (priceEl && changeContainerEl && changeAbsEl && changePctEl) {
+            const currentPriceText = priceEl.textContent;
+            const changeAbsText = changeAbsEl.textContent;
+            if (currentPriceText && changeAbsText) {
+                const currentPrice = parseFloat(currentPriceText.replace(/,/g, ''));
+                const initialChangeAbs = parseFloat(changeAbsText.replace(/,/g, ''));
+                
+                const stockObj = {
+                    id, priceEl, changeContainerEl, changeAbsEl, changePctEl,
+                    currentPrice, initialChangeAbs,
+                };
+                stockObj.previousDayClose = stockObj.currentPrice - stockObj.initialChangeAbs;
+                appData.watchlist.push(stockObj);
+            }
+        }
+    });
+    
+    // --- Populate Holdings ---
+    document.querySelectorAll('#holdings-table-body tr[data-holding-id]').forEach(row => {
+        const id = row.dataset.holdingId;
+        const holdingData = {
+            id: id,
+            qty: parseFloat(document.getElementById(`${id}-qty`).textContent.replace(/,/g, '')),
+            avgPrice: parseFloat(document.getElementById(`${id}-avg-price`).textContent.replace(/,/g, '')),
+            ltpEl: document.getElementById(`${id}-ltp`),
+            currentValueEl: document.getElementById(`${id}-current-value`),
+            dayPnlValueEl: document.getElementById(`${id}-day-pnl-value`),
+            dayPnlPercentEl: document.getElementById(`${id}-day-pnl-percent`),
+            overallPnlValueEl: document.getElementById(`${id}-overall-pnl-value`),
+            overallPnlPercentEl: document.getElementById(`${id}-overall-pnl-percent`),
+            currentLTP: parseFloat(document.getElementById(`${id}-ltp`).textContent.replace(/,/g, '')),
+            initialDayPnlTotal: parseFloat(document.getElementById(`${id}-day-pnl-value`).textContent.replace(/,/g, '')),
+        };
+        holdingData.previousDayLTP = holdingData.currentLTP - (holdingData.initialDayPnlTotal / holdingData.qty);
+        appData.holdings.push(holdingData);
+    });
+
+
+    function formatNumber(num, decimals = 2) {
+        return num.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+
+    function updateElement(el, value, isCurrency = true, isPct = false, parentContainer = null) {
+        if (!el) return;
+        const numericValue = typeof value === 'string' ? parseFloat(value.replace(/[+,]/g, '')) : value; // Strip + and ,
+        
+        let textContent;
+        if (isPct) {
+            textContent = `${numericValue >= 0 ? '+' : ''}${formatNumber(numericValue, 2)}%`;
+        } else if (isCurrency) {
+            // For P&L values (Day P&L, Overall P&L abs), add '+' if positive
+            if (el.id && (el.id.includes('-day-pnl-value') || el.id.includes('-overall-pnl-value') || el.id.includes('summary-overall-pnl-abs') || el.id.includes('summary-day-pnl-abs')) ) {
+                 textContent = `${numericValue >= 0 ? '+' : ''}${formatNumber(numericValue, 2)}`;
+            } else {
+                 textContent = formatNumber(numericValue, 2); // For prices, LTP, current value, invested
+            }
+        } else { // For index values, index change_abs
+            if (el.id && (el.id.includes('-change-abs'))) { // Index/Watchlist change_abs
+                 textContent = `${numericValue >= 0 ? '+' : ''}${formatNumber(numericValue, 2)}`;
+            } else {
+                 textContent = formatNumber(numericValue, 2); // Index value
+            }
+        }
+        el.textContent = textContent;
+
+        const targetEl = parentContainer || el;
+        targetEl.classList.remove('positive', 'negative');
+        if (numericValue > 0) targetEl.classList.add('positive');
+        else if (numericValue < 0) targetEl.classList.add('negative');
+    }
+
+
+    function simulateRealtimeUpdates() {
+        // --- Update Indices ---
+        appData.indices.forEach(index => {
+            const changeFactor = (Math.random() * 0.001) + 0.0005; // +/- 0.05%
+            index.currentValue *= (1 + changeFactor);
+            const changeAbs = index.currentValue - index.previousDayClose;
+            const changePct = (changeAbs / index.previousDayClose) * 100;
+
+            updateElement(index.valueEl, index.currentValue, false); // Index value itself
+            updateElement(index.changeAbsEl, changeAbs, false, false, index.changeContainerEl); // Abs change
+            updateElement(index.changePctEl, changePct, false, true, index.changeContainerEl); // Pct change
+            
+            // Ensure main container for change also gets class
+            index.changeContainerEl.classList.remove('positive', 'negative');
+            if (changeAbs > 0) index.changeContainerEl.classList.add('positive');
+            else if (changeAbs < 0) index.changeContainerEl.classList.add('negative');
+        });
+
+        // --- Update Watchlist ---
+        appData.watchlist.forEach(stock => {
+            const changeFactor = (Math.random() * 0.01) + 0.005; // +/- 0.5%
+            stock.currentPrice *= (1 + changeFactor);
+            const changeAbs = stock.currentPrice - stock.previousDayClose;
+            const changePct = (changeAbs / stock.previousDayClose) * 100;
+
+            updateElement(stock.priceEl, stock.currentPrice, true, false, stock.priceEl); // Price itself gets color
+            updateElement(stock.changeAbsEl, changeAbs, true, false, stock.changeContainerEl); // Abs change
+            updateElement(stock.changePctEl, changePct, false, true, stock.changeContainerEl); // Pct change
+            
+            // Ensure main container for change also gets class
+            stock.changeContainerEl.classList.remove('positive', 'negative');
+            if (changeAbs > 0) stock.changeContainerEl.classList.add('positive');
+            else if (changeAbs < 0) stock.changeContainerEl.classList.add('negative');
+        });
+
+        // --- Update Holdings and Aggregate for Summary ---
+        let totalInvested = 0;
+        let totalCurrentValue = 0;
+        let totalDayPnl = 0;
+        let totalPreviousDayValue = 0;
+
+        appData.holdings.forEach(stock => {
+            const changeFactor = (Math.random() * 0.01) - 0.005;
+            stock.currentLTP *= (1 + changeFactor);
+            
+            const currentValue = stock.currentLTP * stock.qty;
+            const dayPnl = (stock.currentLTP - stock.previousDayLTP) * stock.qty;
+            const dayPnlPct = stock.previousDayLTP !== 0 ? (dayPnl / (stock.previousDayLTP * stock.qty)) * 100 : 0;
+            const overallPnl = (stock.currentLTP - stock.avgPrice) * stock.qty;
+            const overallPnlPct = stock.avgPrice !== 0 ? (overallPnl / (stock.avgPrice * stock.qty)) * 100 : 0;
+
+            updateElement(stock.ltpEl, stock.currentLTP);
+            updateElement(stock.currentValueEl, currentValue);
+            updateElement(stock.dayPnlValueEl, dayPnl, true); // isCurrency=true
+            updateElement(stock.dayPnlPercentEl, dayPnlPct, false, true);
+            updateElement(stock.overallPnlValueEl, overallPnl, true); // isCurrency=true
+            updateElement(stock.overallPnlPercentEl, overallPnlPct, false, true);
+
+            totalInvested += stock.avgPrice * stock.qty;
+            totalCurrentValue += currentValue;
+            totalDayPnl += dayPnl;
+            totalPreviousDayValue += stock.previousDayLTP * stock.qty;
+        });
+
+        // --- Update Summary Section ---
+        updateElement(appData.summary.investedEl, totalInvested);
+        updateElement(appData.summary.currentValueEl, totalCurrentValue);
+
+        const totalOverallPnl = totalCurrentValue - totalInvested;
+        const totalOverallPnlPct = totalInvested !== 0 ? (totalOverallPnl / totalInvested) * 100 : 0;
+        updateElement(appData.summary.overallPnlAbsEl, totalOverallPnl, true, false, appData.summary.overallPnlContainerEl);
+        updateElement(appData.summary.overallPnlPctEl, totalOverallPnlPct, false, true, appData.summary.overallPnlContainerEl);
+        appData.summary.overallPnlContainerEl.classList.remove('positive', 'negative');
+        if (totalOverallPnl > 0) appData.summary.overallPnlContainerEl.classList.add('positive');
+        else if (totalOverallPnl < 0) appData.summary.overallPnlContainerEl.classList.add('negative');
+
+        const totalDayPnlPct = totalPreviousDayValue !== 0 ? (totalDayPnl / totalPreviousDayValue) * 100 : 0;
+        updateElement(appData.summary.dayPnlAbsEl, totalDayPnl, true, false, appData.summary.dayPnlContainerEl);
+        updateElement(appData.summary.dayPnlPctEl, totalDayPnlPct, false, true, appData.summary.dayPnlContainerEl);
+        appData.summary.dayPnlContainerEl.classList.remove('positive', 'negative');
+        if (totalDayPnl > 0) appData.summary.dayPnlContainerEl.classList.add('positive');
+        else if (totalDayPnl < 0) appData.summary.dayPnlContainerEl.classList.add('negative');
+    }
+
+    setInterval(simulateRealtimeUpdates, 2500);
+    simulateRealtimeUpdates(); // Initial call
+});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upstox Option Chain & Square-Off Tool</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <style>
+        /* --- Keep previous CSS styles --- */
+        body { padding-top: 15px; padding-bottom: 20px; }
+        .log-area { height: 200px; background-color: #f8f9fa; border: 1px solid #dee2e6; font-family: monospace; font-size: 0.75rem; overflow-y: scroll; white-space: pre-wrap; word-wrap: break-word; margin-top: 15px; }
+        .table-sm th, .table-sm td { padding: 0.25rem 0.4rem; vertical-align: middle; font-size: 0.8rem; text-align: right; white-space: nowrap; }
+        .strike-col, .checkbox-col { text-align: center !important; font-weight: bold; }
+        .strike-col { background-color: #f8f9fa; }
+        .call-bg { background-color: rgba(25, 135, 84, 0.05); }
+        .put-bg { background-color: rgba(220, 53, 69, 0.05); }
+        .table-sm thead th { position: sticky; top: 0; background-color: #e9ecef; z-index: 10; }
+        .strike-highlight { background-color: #dee2e6 !important; font-weight: bold; }
+        #loadingIndicator { display: none; align-items: center; justify-content: center; }
+        .order-info { font-size: 0.85rem; color: #6c757d; }
+        
+        .table-container { 
+            height: 55vh;
+            overflow-y: auto; 
+            overflow-x: auto; 
+            border: 1px solid #dee2e6; 
+        }
+
+        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { opacity: 1; }
+        .form-label-sm { font-size: 0.9rem; margin-bottom: 0.2rem; }
+        #autoRefreshIndicator { display: inline-block; margin-left: 5px; }
+        .price-input { width: 75px; display: none; margin-left: 8px; }
+        .confirm-box { background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 4px;}
+        .confirm-box label { color: #856404; font-weight: bold; }
+    </style>
+</head>
+<body>
+<div class="container-fluid">
+    <h3 class="mb-3">Upstox Option Chain & Square-Off Tool</h3>
+    <div class="nav-back">
+        <a href="index.html">« Back to Main Menu</a> |
+        <a href="auth_v2.html">Go to Authentication </a>
+    </div>
+
+    <!-- Access Token Info -->
+    <div class="alert alert-info py-2" role="alert" id="tokenStatus">Loading Access Token...</div>
+
+    <!-- Input Controls -->
+    <div class="row g-2 align-items-end mb-3">
+        <div class="col-md-3">
+            <label for="indexSelect" class="form-label form-label-sm">Index:</label>
+            <select id="indexSelect" class="form-select form-select-sm">
+                <option value="NIFTY" data-instrument-key="NSE_INDEX|Nifty 50" data-lot-size="75">NIFTY 50</option>
+                <option value="BANKNIFTY" data-instrument-key="NSE_INDEX|Nifty Bank" data-lot-size="15">BANKNIFTY</option>
+                <option value="FINNIFTY" data-instrument-key="NSE_INDEX|Nifty Fin Service" data-lot-size="25">FINNIFTY</option>
+                <option value="MIDCPNIFTY" data-instrument-key="NSE_INDEX|Nifty Midcap Select" data-lot-size="50">MIDCP NIFTY</option>
+                <option value="SENSEX" data-instrument-key="BSE_INDEX|SENSEX" data-lot-size="20">SENSEX</option>
+                <option value="BANKEX" data-instrument-key="BSE_INDEX|BANKEX" data-lot-size="15">BANKEX</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label for="expiryDate" class="form-label form-label-sm">Expiry Date:</label>
+            <input type="date" id="expiryDate" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-2">
+            <label for="quantityLots" class="form-label form-label-sm">Lots:</label>
+            <input type="number" id="quantityLots" class="form-control form-control-sm" value="1" min="1" step="1">
+        </div>
+        <div class="col-md-2">
+            <button id="fetchChainBtn" class="btn btn-primary btn-sm w-100">Fetch Chain</button>
+        </div>
+        <div class="col-md-2">
+            <button id="clearLogsBtn" class="btn btn-secondary btn-sm w-100">Clear Logs</button>
+        </div>
+    </div>
+    
+    <!-- SQUARE-OFF SECTION -->
+    <div class="card bg-light border-danger mb-3">
+        <div class="card-header bg-danger text-white">Emergency Actions</div>
+        <div class="card-body">
+            <p class="card-text small text-danger fw-bold">HIGH RISK: This will cancel ALL open orders and then attempt to close ALL net positions with new LIMIT orders.</p>
+            <div class="row align-items-end g-3">
+                <div class="col-md-5">
+                    <label for="priceOffset" class="form-label form-label-sm">Price Offset for Closing Orders:</label>
+                    <input type="number" id="priceOffset" class="form-control form-control-sm" value="0.50" step="0.05" min="0">
+                    <div class="form-text small">Offset from LTP for closing LIMIT orders to improve fill chance. (SELL at LTP-Offset, BUY at LTP+Offset)</div>
+                </div>
+                <div class="col-md-4 d-flex align-items-center justify-content-center confirm-box p-2">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="confirmSquareOff">
+                        <label class="form-check-label small" for="confirmSquareOff">
+                            I understand the risks. Enable Square Off.
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <button id="squareOffBtn" class="btn btn-danger w-100" disabled>Square Off ALL Positions</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div id="loadingIndicator" class="text-center mb-2">
+        <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+        <span>Loading data...</span>
+    </div>
+
+    <!-- Index LTP Display & Order Controls -->
+    <div class="row mb-2 align-items-center">
+        <div class="col-md-4">
+            <h6>
+                Index LTP: <span id="indexLtp" class="fw-bold">-</span>
+                <small id="indexLtpTimestamp" class="text-muted ms-2"></small>
+                <small>(ATM Strike: <span id="atmStrikeDisplay">-</span>)</small>
+            </h6>
+            <h6 class="mt-1 small">
+                <span class="text-success">5 ATM Call OI: <span id="totalCallOI" class="fw-bold">-</span></span> | 
+                <span class="text-danger">5 ATM Put OI: <span id="totalPutOI" class="fw-bold">-</span></span>
+            </h6>
+            <h6 class="mt-1 small">
+                <span class="text-success">Total Call OI: <span id="grandTotalCallOI" class="fw-bold">-</span></span> | 
+                <span class="text-danger">Total Put OI: <span id="grandTotalPutOI" class="fw-bold">-</span></span>
+            </h6>
+        </div>
+        <div class="col-md-8 text-end d-flex justify-content-end align-items-center">
+            <div class="form-check form-switch me-3">
+                <input class="form-check-input" type="checkbox" role="switch" id="autoRefreshCheckbox">
+                <label class="form-check-label order-info" for="autoRefreshCheckbox">Auto Refresh (5s)</label>
+                <span id="autoRefreshIndicator"></span>
+            </div>
+            <div class="d-inline-flex align-items-center me-3">
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="orderType" id="orderTypeLimit" value="LIMIT" checked>
+                    <label class="form-check-label order-info" for="orderTypeLimit">LIMIT</label>
+                </div>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="orderType" id="orderTypeMarket" value="MARKET">
+                    <label class="form-check-label order-info" for="orderTypeMarket">MARKET</label>
+                </div>
+            </div>
+            <button id="buySelectedBtn" class="btn btn-warning btn-sm">Place Multi-Order</button>
+        </div>
+    </div>
+
+    <!-- Combined Option Chain Table -->
+    <div class="row">
+        <div class="col-12">
+            <div class="table-container" id="tableContainer">
+                <table class="table table-sm table-striped table-bordered table-hover">
+                    <thead class="table-light">
+                    <tr>
+                        <th class="call-bg">Delta</th> <th class="call-bg">IV</th> <th class="call-bg">OI</th> <th class="call-bg">OI Value</th> <th class="call-bg">Volume</th> <th class="call-bg">LTP</th> <th class="call-bg checkbox-col">Buy CE</th>
+                        <th class="strike-col">Strike</th>
+                        <th class="put-bg checkbox-col">Buy PE</th> <th class="put-bg">LTP</th> <th class="put-bg">Volume</th> <th class="put-bg">OI</th> <th class="put-bg">OI Value</th> <th class="put-bg">IV</th> <th class="put-bg">Delta</th>
+                    </tr>
+                    </thead>
+                    <tbody id="optionChainTableBody">
+                    <tr><td colspan="15" class="text-center">Select Index/Expiry and Fetch Chain.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logs -->
+    <div class="row mt-3">
+        <div class="col">
+            <h6>API Logs</h6>
+            <div id="logs" class="log-area"></div>
+        </div>
+    </div>
+
+</div> <!-- /container-fluid -->
+
+<!-- Bootstrap Bundle JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>
+
+<script>
+    // --- Configuration & Globals ---
+    const API_BASE_URL = 'https://api.upstox.com/v2';
+    const ACCESS_TOKEN_KEY = 'upstoxAccessToken';
+    const NUM_STRIKES_SIDE = 7;
+    const MULTI_ORDER_ENDPOINT = '/order/multi/place';
+    const REFRESH_INTERVAL_MS = 5000;
+    let accessToken = null;
+    let currentLotSize = 75;
+    let refreshIntervalId = null;
+
+    // --- UI Elements ---
+    const tokenStatusEl = document.getElementById('tokenStatus'); const indexSelectEl = document.getElementById('indexSelect'); const expiryDateEl = document.getElementById('expiryDate'); const fetchChainBtn = document.getElementById('fetchChainBtn'); const indexLtpEl = document.getElementById('indexLtp'); const atmStrikeDisplayEl = document.getElementById('atmStrikeDisplay'); const optionChainTableBody = document.getElementById('optionChainTableBody'); const buySelectedBtn = document.getElementById('buySelectedBtn'); const logsEl = document.getElementById('logs'); const clearLogsBtn = document.getElementById('clearLogsBtn'); const loadingIndicator = document.getElementById('loadingIndicator'); const quantityLotsEl = document.getElementById('quantityLots'); const orderTypeLimitEl = document.getElementById('orderTypeLimit'); const orderTypeMarketEl = document.getElementById('orderTypeMarket');
+    const tableContainerEl = document.getElementById('tableContainer');
+    const autoRefreshCheckbox = document.getElementById('autoRefreshCheckbox');
+    const autoRefreshIndicator = document.getElementById('autoRefreshIndicator');
+    const indexLtpTimestampEl = document.getElementById('indexLtpTimestamp');
+    const totalCallOIEl = document.getElementById('totalCallOI');
+    const totalPutOIEl = document.getElementById('totalPutOI');
+    const grandTotalCallOIEl = document.getElementById('grandTotalCallOI');
+    const grandTotalPutOIEl = document.getElementById('grandTotalPutOI');
+    const priceOffsetInput = document.getElementById('priceOffset');
+    const confirmSquareOffCheckbox = document.getElementById('confirmSquareOff');
+    const squareOffBtn = document.getElementById('squareOffBtn');
+
+    // --- Logging & API Helper (No changes) ---
+    function logMessage(type, ...messages) { const timestamp = new Date().toLocaleTimeString(); const logEntry = document.createElement('div'); const processedMessages = messages.map(m => typeof m === 'object' ? JSON.stringify(m) : m); logEntry.innerHTML = `<strong>[${timestamp} ${type}]</strong>: ${processedMessages.join(' ')}`; if (type === 'ERROR') { logEntry.style.color = 'red'; logEntry.style.fontWeight = 'bold'; } else if (type === 'REQUEST') { logEntry.style.color = 'blue'; } else if (type === 'RESPONSE') { logEntry.style.color = 'green'; } else if (type === 'WARN') { logEntry.style.color = '#fd7e14'; logEntry.style.fontWeight = 'bold';} logsEl.appendChild(logEntry); logsEl.scrollTop = logsEl.scrollHeight;}
+    function clearLogs() { logsEl.innerHTML = ''; logMessage('INFO', 'Logs cleared.'); }
+    async function makeApiCall(endpoint, method = 'GET', body = null) { if (!accessToken) { throw new Error('Access Token missing.'); } const url = `${API_BASE_URL}${endpoint}`; const headers = { 'Accept': 'application/json', 'Authorization': `Bearer ${accessToken}`}; if ((method === 'POST' || method === 'PUT') && body) { headers['Content-Type'] = 'application/json'; } const requestOptions = { method: method, headers: headers }; if (body) { requestOptions.body = JSON.stringify(body); } logMessage('REQUEST', `${method} ${url}`, body ? `Body: ${JSON.stringify(body, null, 2)}` : ''); try { const response = await fetch(url, requestOptions); let data; const contentType = response.headers.get("content-type"); if (contentType && contentType.indexOf("application/json") !== -1) { data = await response.json(); } else { data = await response.text(); logMessage('WARN', `Non-JSON response (${response.status}) from ${url}`); } logMessage('RESPONSE', `${response.status}`, typeof data === 'object' ? JSON.stringify(data, null, 2) : data); if (!response.ok) { const errorMsg = data?.errors?.[0]?.message || (typeof data === 'string' ? data : JSON.stringify(data)); throw new Error(`API Error (${response.status}): ${errorMsg}`); } if (typeof data === 'object' && data?.status && data.status !== 'success' && endpoint !== MULTI_ORDER_ENDPOINT) { logMessage('WARN', `API non-success status: ${data.status}`, data); } return data; } catch (error) { logMessage('ERROR', `API Call Failed: ${method} ${url}: ${error.message}`); throw error; } }
+
+    // --- Option Chain Logic ---
+    function getAccessToken() { const token = localStorage.getItem(ACCESS_TOKEN_KEY); if (token) { accessToken = token; tokenStatusEl.textContent = `Access Token Loaded (ends ...${token.slice(-4)})`; tokenStatusEl.className = 'alert alert-success py-2'; fetchChainBtn.disabled = false; buySelectedBtn.disabled = false; } else { accessToken = null; tokenStatusEl.textContent = 'Error: Access Token missing.'; tokenStatusEl.className = 'alert alert-danger py-2'; fetchChainBtn.disabled = true; buySelectedBtn.disabled = true; } updateConfirmSquareOffState(); }
+    function setLoading(isLoading) { loadingIndicator.style.display = isLoading ? 'flex' : 'none'; if(!refreshIntervalId) { fetchChainBtn.disabled = isLoading || !accessToken; } buySelectedBtn.disabled = isLoading || !accessToken; }
+    async function fetchIndexLtp(instrumentKey) { try { const encodedKey = encodeURIComponent(instrumentKey); const instrumentKeyInResponse = instrumentKey.replace('|', ':'); const endpoint = `/market-quote/ltp?instrument_key=${encodedKey}`; const response = await makeApiCall(endpoint); const ltpData = response?.data?.[instrumentKeyInResponse] ?? response?.data?.[instrumentKey]; if (response?.status === 'success' && ltpData) { const ltp = ltpData.last_price; indexLtpEl.textContent = formatNumber(ltp, 2); indexLtpEl.className = 'fw-bold'; indexLtpTimestampEl.textContent = `(as of ${new Date().toLocaleTimeString()})`; return ltp; } else { logMessage('ERROR', 'Could not parse index LTP:', response); indexLtpEl.textContent = 'Error'; indexLtpTimestampEl.textContent = ''; return null; } } catch (error) { indexLtpEl.textContent = 'Error'; indexLtpTimestampEl.textContent = ''; return null; } }
+    async function fetchOptionChain(instrumentKey, expiryDate) { try { const formattedExpiry = expiryDate; const encodedKey = encodeURIComponent(instrumentKey); const endpoint = `/option/chain?instrument_key=${encodedKey}&expiry_date=${formattedExpiry}`; const response = await makeApiCall(endpoint); if (response?.status === 'success' && Array.isArray(response.data)) { return response.data; } else { logMessage('ERROR', 'Could not parse chain or data not array:', response); return null; } } catch (error) { logMessage('ERROR', `Fetch chain failed: ${error.message}`); return null; } }
+    function formatNumber(value, decimals = 2, useLocale = false) { const num = parseFloat(value); if (value === null || value === undefined || isNaN(num)) { return 'N/A'; } const fixedNum = num.toFixed(decimals); return useLocale ? parseFloat(fixedNum).toLocaleString('en-IN') : fixedNum; }
+    function formatOiValueInCrores(value) { if (value === null || typeof value !== 'number' || isNaN(value)) { return 'N/A'; } return `${(value / 10000000).toFixed(2)} Cr`; }
+    function processAndDisplayOptions(strikeDataArray, indexLtp) { const checkedKeys = new Set(); optionChainTableBody.querySelectorAll('.option-select:checked').forEach(checkbox => { checkedKeys.add(checkbox.dataset.instrumentKey); }); const scrollPosition = tableContainerEl.scrollTop; optionChainTableBody.innerHTML = ``; atmStrikeDisplayEl.textContent = '-'; totalCallOIEl.textContent = '-'; totalPutOIEl.textContent = '-'; grandTotalCallOIEl.textContent = '-'; grandTotalPutOIEl.textContent = '-'; if (!strikeDataArray || strikeDataArray.length === 0 || indexLtp === null || indexLtp === undefined) { logMessage('ERROR', 'Cannot process: Invalid data.'); optionChainTableBody.innerHTML = '<tr><td colspan="15">Error loading data.</td></tr>'; setLoading(false); return; } try { const sortedStrikes = [...strikeDataArray].sort((a, b) => a.strike_price - b.strike_price); let grandTotalCallOi = 0; let grandTotalPutOi = 0; sortedStrikes.forEach(strike => { const callOi = strike?.call_options?.market_data?.oi; if (typeof callOi === 'number') { grandTotalCallOi += callOi; } const putOi = strike?.put_options?.market_data?.oi; if (typeof putOi === 'number') { grandTotalPutOi += putOi; } }); grandTotalCallOIEl.textContent = formatNumber(grandTotalCallOi, 0, true); grandTotalPutOIEl.textContent = formatNumber(grandTotalPutOi, 0, true); let atmStrike = 0, atmIndex = -1, minDiff = Infinity; sortedStrikes.forEach((d, i) => { if (typeof d.strike_price !== 'number') return; const diff = Math.abs(d.strike_price - indexLtp); if (diff < minDiff) { minDiff = diff; atmStrike = d.strike_price; atmIndex = i; } }); if (atmIndex === -1) { throw new Error('Could not find ATM strike.'); } logMessage('INFO', `Index LTP: ${indexLtp}, ATM Strike: ${atmStrike} (Index: ${atmIndex})`); atmStrikeDisplayEl.textContent = atmStrike; let fiveAtmCallOi = 0; let fiveAtmPutOi = 0; const callStrikes = sortedStrikes.slice(atmIndex, atmIndex + 5); callStrikes.forEach(strike => { const oi = strike?.call_options?.market_data?.oi; if (typeof oi === 'number') { fiveAtmCallOi += oi; } }); const putStartIndex = Math.max(0, atmIndex - 4); const putStrikes = sortedStrikes.slice(putStartIndex, atmIndex + 1); putStrikes.forEach(strike => { const oi = strike?.put_options?.market_data?.oi; if (typeof oi === 'number') { fiveAtmPutOi += oi; } }); totalCallOIEl.textContent = formatNumber(fiveAtmCallOi, 0, true); totalPutOIEl.textContent = formatNumber(fiveAtmPutOi, 0, true); const startIndex = Math.max(0, atmIndex - NUM_STRIKES_SIDE); const endIndex = Math.min(sortedStrikes.length, atmIndex + NUM_STRIKES_SIDE + 1); const selectedStrikesData = sortedStrikes.slice(startIndex, endIndex); const processedStrikes = []; const getOptionDetails = (d) => d?.instrument_key ? { instrument_key: d.instrument_key, ltp: d.market_data?.ltp, volume: d.market_data?.volume, oi: d.market_data?.oi, iv: d.option_greeks?.iv, delta: d.option_greeks?.delta } : null; selectedStrikesData.forEach(d => processedStrikes.push({ strike_price: d.strike_price, is_atm: d.strike_price === atmStrike, call: getOptionDetails(d.call_options), put: getOptionDetails(d.put_options) })); displayCombinedOptionsTable(processedStrikes, checkedKeys); } catch (error) { logMessage('ERROR', `Error processing options: ${error.message}`); optionChainTableBody.innerHTML = `<tr><td colspan="15">Error processing options.</td></tr>`; } finally { setLoading(false); if (accessToken) { buySelectedBtn.disabled = false; } tableContainerEl.scrollTop = scrollPosition; } }
+    function displayCombinedOptionsTable(processedStrikes, checkedKeys = new Set()) { optionChainTableBody.innerHTML = ''; if (!processedStrikes || processedStrikes.length === 0) { optionChainTableBody.innerHTML = '<tr><td colspan="15" class="text-center">No options data available.</td></tr>'; return; } processedStrikes.forEach(strike => { const row = document.createElement('tr'); if (strike.is_atm) { row.classList.add('strike-highlight'); } const call = strike.call || {}, put = strike.put || {}; const cLtp = formatNumber(call.ltp, 2), cVol = formatNumber(call.volume, 0, true), cOI = formatNumber(call.oi, 0, true), cIV = formatNumber(call.iv, 2), cDelta = formatNumber(call.delta, 3), cInstKey = call.instrument_key || '', cLtpRaw = call.ltp; const pLtp = formatNumber(put.ltp, 2), pVol = formatNumber(put.volume, 0, true), pOI = formatNumber(put.oi, 0, true), pIV = formatNumber(put.iv, 2), pDelta = formatNumber(put.delta, 3), pInstKey = put.instrument_key || '', pLtpRaw = put.ltp; const callOiValue = (typeof call.oi === 'number' && typeof call.ltp === 'number') ? call.oi * call.ltp : null; const cOiValueFormatted = formatOiValueInCrores(callOiValue); const putOiValue = (typeof put.oi === 'number' && typeof put.ltp === 'number') ? put.oi * put.ltp : null; const pOiValueFormatted = formatOiValueInCrores(putOiValue); const callPriceInput = cInstKey ? `<input type="number" class="price-input form-control form-control-sm" data-instrument-key="${cInstKey}" min="0" step="0.05">` : ''; const putPriceInput = pInstKey ? `<input type="number" class="price-input form-control form-control-sm" data-instrument-key="${pInstKey}" min="0" step="0.05">` : ''; row.innerHTML = ` <td class="call-bg">${cDelta}</td> <td class="call-bg">${cIV}</td> <td class="call-bg">${cOI}</td> <td class="call-bg">${cOiValueFormatted}</td> <td class="call-bg">${cVol}</td> <td class="call-bg">${cLtp}</td> <td class="call-bg checkbox-col d-flex align-items-center justify-content-center"> ${cInstKey ? `<input type="checkbox" class="option-select" data-instrument-key="${cInstKey}" data-type="CE" data-ltp="${cLtpRaw ?? ''}">` : ''} ${callPriceInput} </td> <td class="strike-col">${strike.strike_price}</td> <td class="put-bg checkbox-col d-flex align-items-center justify-content-center"> ${pInstKey ? `<input type="checkbox" class="option-select" data-instrument-key="${pInstKey}" data-type="PE" data-ltp="${pLtpRaw ?? ''}">` : ''} ${putPriceInput} </td> <td class="put-bg">${pLtp}</td> <td class="put-bg">${pVol}</td> <td class="put-bg">${pOI}</td> <td class="put-bg">${pOiValueFormatted}</td> <td class="put-bg">${pIV}</td> <td class="put-bg">${pDelta}</td> `; optionChainTableBody.appendChild(row); }); optionChainTableBody.querySelectorAll('.option-select').forEach(checkbox => { if (checkedKeys.has(checkbox.dataset.instrumentKey)) { checkbox.checked = true; togglePriceInput(checkbox); } }); }
+    async function placeMultiOrder() { const selectedCheckboxes = optionChainTableBody.querySelectorAll('.option-select:checked'); if (selectedCheckboxes.length === 0) { alert(`Please select at least one option to buy.`); return; } const selectedOrderType = document.querySelector('input[name="orderType"]:checked').value; const lots = parseInt(quantityLotsEl.value); if (isNaN(lots) || lots < 1) { alert('Please enter a valid number of lots (minimum 1).'); quantityLotsEl.focus(); return; } const totalQuantity = lots * currentLotSize; logMessage('INFO', `Attempting multi-order for ${lots} lots (Qty: ${totalQuantity})`); logMessage('WARN', `Order Type: ${selectedOrderType}`); const multiOrderPayload = []; let correlationCounter = 1; let hasInvalidPrice = false; setLoading(true); for (const checkbox of selectedCheckboxes) { const instrumentKey = checkbox.dataset.instrumentKey; const optionType = checkbox.dataset.type; let orderPrice = 0; if (selectedOrderType === 'LIMIT') { const priceInput = optionChainTableBody.querySelector(`.price-input[data-instrument-key="${instrumentKey}"]`); const priceValue = parseFloat(priceInput.value); if (isNaN(priceValue) || priceValue <= 0) { logMessage('ERROR', `Invalid LIMIT price for ${instrumentKey}: "${priceInput.value}". Skipping leg.`); priceInput.style.border = '2px solid red'; hasInvalidPrice = true; continue; } orderPrice = priceValue; priceInput.style.border = ''; } const orderLeg = { instrument_token: instrumentKey, quantity: totalQuantity, product: "D", order_type: selectedOrderType, transaction_type: "BUY", price: orderPrice, validity: "DAY", disclosed_quantity: 0, trigger_price: 0, is_amo: false, tag: `chainTool_${correlationCounter}`, correlation_id: correlationCounter.toString(), }; logMessage('INFO', `Adding leg ${correlationCounter} (${optionType}, ${selectedOrderType})`, orderLeg); multiOrderPayload.push(orderLeg); correlationCounter++; } if (hasInvalidPrice) { alert('One or more selected options have an invalid limit price. Please correct the highlighted fields.'); setLoading(false); return; } if (multiOrderPayload.length === 0) { logMessage('WARN', 'Multi-order aborted. No valid legs could be prepared.'); alert('No valid orders to place. This could happen if all selected options had invalid prices.'); setLoading(false); return; } try { const response = await makeApiCall(MULTI_ORDER_ENDPOINT, 'POST', multiOrderPayload); logMessage('INFO', '--- Multi-Order Response ---'); if (response && response.status === 'success' && Array.isArray(response.data)) { alert(`Multi-order request processed. Check logs.`); response.data.forEach((orderResult) => { if (orderResult.status === 'success') { logMessage('INFO', `Leg ${orderResult.correlation_id} : Success, Order ID: ${orderResult.order_id || 'N/A'}`); } else { logMessage('ERROR', `Leg ${orderResult.correlation_id} : Failed, Message: ${orderResult.message || 'N/A'}`); } }); } else if (response && response.status === 'error') { logMessage('ERROR', `Multi-order API Error: ${response.message || JSON.stringify(response.errors)}`); alert(`Multi-order request failed: ${response.message || 'Check Logs.'}`); } else { logMessage('ERROR', 'Unexpected multi-order response:', response); alert('Unexpected response from multi-order API.'); } } catch (error) { alert(`Failed to send multi-order request. Error: ${error.message}`); } finally { setLoading(false); selectedCheckboxes.forEach(cb => cb.checked = false); if(accessToken) { buySelectedBtn.disabled = false; } } }
+    async function refreshChainData() { if (!autoRefreshCheckbox.checked || !accessToken) { stopAutoRefresh(); return; } autoRefreshIndicator.innerHTML = `<div class="spinner-border spinner-border-sm text-secondary" role="status"><span class="visually-hidden">Loading...</span></div>`; const instrumentKey = indexSelectEl.options[indexSelectEl.selectedIndex].dataset.instrumentKey; const expiry = expiryDateEl.value; if (!instrumentKey || !expiry) { logMessage('WARN', 'Auto-refresh stopped: Missing Index or Expiry.'); stopAutoRefresh(); return; } try { logMessage('INFO', 'Auto-refreshing chain data...'); const indexLtp = await fetchIndexLtp(instrumentKey); if (indexLtp !== null) { const strikeDataArray = await fetchOptionChain(instrumentKey, expiry); if (strikeDataArray) { processAndDisplayOptions(strikeDataArray, indexLtp); } else { logMessage('WARN', 'Auto-refresh failed to get chain data. Will retry.'); } } else { logMessage('WARN', 'Auto-refresh failed to get index LTP. Will retry.'); } } catch (error) { logMessage('ERROR', `Auto-refresh cycle error: ${error.message}`); } finally { autoRefreshIndicator.innerHTML = ''; } }
+    function startAutoRefresh() { if (refreshIntervalId) return; logMessage('INFO', `Auto-refresh started (Interval: ${REFRESH_INTERVAL_MS / 1000}s).`); fetchChainBtn.disabled = true; indexSelectEl.disabled = true; expiryDateEl.disabled = true; refreshChainData(); refreshIntervalId = setInterval(refreshChainData, REFRESH_INTERVAL_MS); }
+    function stopAutoRefresh() { if (!refreshIntervalId) return; clearInterval(refreshIntervalId); refreshIntervalId = null; logMessage('INFO', 'Auto-refresh stopped.'); fetchChainBtn.disabled = !accessToken; indexSelectEl.disabled = false; expiryDateEl.disabled = false; autoRefreshIndicator.innerHTML = ''; autoRefreshCheckbox.checked = false; }
+    function togglePriceInput(checkbox) { const instrumentKey = checkbox.dataset.instrumentKey; const priceInput = optionChainTableBody.querySelector(`.price-input[data-instrument-key="${instrumentKey}"]`); if (!priceInput) return; const isLimitOrder = document.querySelector('input[name="orderType"]:checked').value === 'LIMIT'; if (checkbox.checked && isLimitOrder) { priceInput.style.display = 'inline-block'; const ltp = parseFloat(checkbox.dataset.ltp); if (!isNaN(ltp) && priceInput.value === '') { priceInput.value = ltp.toFixed(2); } } else { priceInput.style.display = 'none'; } }
+    
+    // --- ========================================================= ---
+    // --- START: INTEGRATED SQUARE-OFF LOGIC (WITH SLICING)         ---
+    // --- ========================================================= ---
+    
+    const MAX_ORDER_QUANTITY = { NIFTY: 1800, BANKNIFTY: 900, FINNIFTY: 1800, MIDCPNIFTY: 4200, SENSEX: 1000, BANKEX: 1000, DEFAULT: 900 };
+    function getMaxOrderSize(tradingSymbol) { if (!tradingSymbol || typeof tradingSymbol !== 'string') return MAX_ORDER_QUANTITY.DEFAULT; const symbol = tradingSymbol.toUpperCase(); if (symbol.startsWith('BANKNIFTY')) return MAX_ORDER_QUANTITY.BANKNIFTY; if (symbol.startsWith('FINNIFTY')) return MAX_ORDER_QUANTITY.FINNIFTY; if (symbol.startsWith('MIDCPNIFTY')) return MAX_ORDER_QUANTITY.MIDCPNIFTY; if (symbol.startsWith('NIFTY')) return MAX_ORDER_QUANTITY.NIFTY; if (symbol.startsWith('SENSEX')) return MAX_ORDER_QUANTITY.SENSEX; if (symbol.startsWith('BANKEX')) return MAX_ORDER_QUANTITY.BANKEX; logMessage('WARN', `Could not determine specific max order size for ${tradingSymbol}. Using default of ${MAX_ORDER_QUANTITY.DEFAULT}.`); return MAX_ORDER_QUANTITY.DEFAULT; }
+    const V2_CANCEL_OPEN_STATUSES = [ "open", "trigger pending", "after market order req received" ];
+    async function cancelAllOpenOrdersV2() { logMessage('INFO', `Attempting to cancel all open orders...`); try { const allOrdersResponse = await makeApiCall('/order/retrieve-all', 'GET'); const allOrders = allOrdersResponse.data || []; const openOrders = allOrders.filter(o => o.status && V2_CANCEL_OPEN_STATUSES.includes(o.status.toLowerCase()) && o.order_id); if (openOrders.length === 0) { logMessage('INFO', "-> No open orders found to cancel."); return true; } logMessage('INFO', `-> Found ${openOrders.length} open orders. Attempting cancellation...`); const cancellationPromises = openOrders.map(order => makeApiCall(`/order/cancel?order_id=${encodeURIComponent(order.order_id)}`, 'DELETE').then(response => { logMessage('INFO', `  -> Success cancelling order: ${response?.data?.order_id || order.order_id}`); return true; }).catch(error => { logMessage('ERROR', `  -> Failed to cancel order ${order.order_id}: ${error.message}`); return false; })); const results = await Promise.all(cancellationPromises); const successCount = results.filter(Boolean).length; if (successCount < openOrders.length) { logMessage('WARN', `-> WARNING: Failed to cancel ${openOrders.length - successCount} out of ${openOrders.length} orders.`); return false; } logMessage('INFO', `-> Successfully cancelled all ${successCount} open orders.`); return true; } catch (error) { logMessage('ERROR', `-> CRITICAL ERROR fetching/cancelling orders: ${error.message}. Process halted.`); return false; } }
+    async function fetchPositionsV2() { logMessage('INFO', `Fetching current positions...`); try { const response = await makeApiCall('/portfolio/short-term-positions', 'GET'); const positions = response.data || []; const netPositions = positions.filter(p => p.quantity !== 0 && p.quantity !== null && typeof p.quantity !== 'undefined'); logMessage('INFO', `-> Fetched ${netPositions.length} net positions.`); return netPositions; } catch (error) { logMessage('ERROR', `-> ERROR fetching positions: ${error.message}`); return null; } }
+    async function placeSquareOffOrderV2(position, offset) { const totalQty = Math.abs(position.quantity || 0); const ltp = position.last_price; const transactionType = position.quantity > 0 ? "SELL" : "BUY"; const instrumentKey = position.instrument_token; const productType = position.product; const tradingSymbol = position.trading_symbol || instrumentKey; if (totalQty === 0) { logMessage('INFO', `Skipping ${tradingSymbol}: Zero quantity.`); return { success: true }; } if (typeof ltp !== 'number' || ltp <= 0) { logMessage('WARN', `⚠️ Skipping ${tradingSymbol}: Missing or invalid LTP (${ltp}).`); return { success: false }; } const roundPrice = (price) => Math.round(price * 100) / 100; const absOffset = Math.abs(offset); let limitPrice = (transactionType === "SELL") ? roundPrice(ltp - absOffset) : roundPrice(ltp + absOffset); if (limitPrice <= 0) { logMessage('WARN', `⚠️ Skipping ${tradingSymbol}: Calculated LIMIT price ${limitPrice} is not positive.`); return { success: false }; } const maxQtyPerOrder = getMaxOrderSize(tradingSymbol); let remainingQty = totalQty; const orderPromises = []; let sliceCount = 1; const totalSlices = Math.ceil(totalQty / maxQtyPerOrder); logMessage('INFO', `  -> Preparing to square off ${totalQty} of ${tradingSymbol}. Max Qty/Order: ${maxQtyPerOrder}. Slices: ${totalSlices}.`); while (remainingQty > 0) { const sliceQty = Math.min(remainingQty, maxQtyPerOrder); logMessage('INFO', `    -> Placing slice ${sliceCount}/${totalSlices}: ${transactionType} ${sliceQty} @ LIMIT ${limitPrice}...`); const body = { instrument_token: instrumentKey, quantity: sliceQty, order_type: "LIMIT", product: productType, transaction_type: transactionType, price: limitPrice, trigger_price: 0, disclosed_quantity: 0, validity: "DAY" }; orderPromises.push(makeApiCall('/order/place', 'POST', body)); remainingQty -= sliceQty; sliceCount++; } try { const results = await Promise.all(orderPromises); const allSucceeded = results.every(res => res.status === 'success'); if (allSucceeded) { logMessage('INFO', `  ✅ SUCCESS: All ${totalSlices} slices for ${tradingSymbol} were placed successfully.`); return { success: true }; } else { logMessage('ERROR', `  ❌ FAILED: Some slices for ${tradingSymbol} failed at the API level. Check response logs.`); return { success: false }; } } catch (error) { logMessage('ERROR', `  ❌ FAILED: A network or critical error occurred while placing slices for ${tradingSymbol}. ${error.message}`); return { success: false }; } }
+    async function performFullSquareOffProcedure() { logMessage('WARN', '--- INITIATING FULL SQUARE OFF PROCEDURE ---'); squareOffBtn.disabled = true; buySelectedBtn.disabled = true; fetchChainBtn.disabled = true; try { const ordersCancelled = await cancelAllOpenOrdersV2(); if (!ordersCancelled) { logMessage('WARN', 'Proceeding to fetch positions despite potential order cancellation issues. Check manually.'); } const netPositions = await fetchPositionsV2(); if (netPositions === null) { logMessage('ERROR', '--> Halting process: Could not fetch positions.'); return; } if (netPositions.length === 0) { logMessage('INFO', '--> No net positions found to square off. Procedure complete.'); return; } const offsetValue = parseFloat(priceOffsetInput.value); logMessage('INFO', `Attempting to place square-off orders for ${netPositions.length} positions with offset ${offsetValue}...`); const placementPromises = netPositions.map(pos => placeSquareOffOrderV2(pos, offsetValue)); const results = await Promise.allSettled(placementPromises); const successCount = results.filter(r => r.status === 'fulfilled' && r.value.success).length; const failureCount = netPositions.length - successCount; logMessage('WARN', '--- Square Off Attempt Summary ---'); logMessage('INFO', `Successfully placed orders for ${successCount} positions.`); if(failureCount > 0) logMessage('ERROR', `Failed/Skipped attempts for ${failureCount} positions.`); logMessage('WARN', 'NOTE: Check actual order status in your terminal/app. Limit orders may not execute.'); } catch (error) { logMessage('ERROR', `--- UNEXPECTED ERROR in square off procedure: ${error.message} ---`); } finally { logMessage('WARN', '--- Full Square Off Procedure Attempt Finished ---'); updateConfirmSquareOffState(); if(accessToken) { buySelectedBtn.disabled = false; fetchChainBtn.disabled = false; } } }
+    function updateConfirmSquareOffState() { const tokenAvailable = !!accessToken; const confirmed = confirmSquareOffCheckbox.checked; squareOffBtn.disabled = !(tokenAvailable && confirmed); }
+    
+    // --- ========================================================= ---
+    // --- END: INTEGRATED SQUARE-OFF LOGIC                          ---
+    // --- ========================================================= ---
+
+    // NEW function to centralize smart expiry date logic
+    function setDefaultExpiryDate() {
+        const selectedOptionEl = indexSelectEl.options[indexSelectEl.selectedIndex];
+        const indexSymbol = selectedOptionEl.value;
+
+        const today = new Date();
+        const dayOfWeek = today.getDay(); // Sunday = 0, Monday = 1, etc.
+        let targetDay;
+
+        // NEW LOGIC based on user request
+        switch (indexSymbol) {
+            case 'SENSEX':
+            case 'BANKEX':
+                targetDay = 4; // Thursday
+                break;
+            case 'NIFTY':
+            case 'BANKNIFTY':
+            case 'FINNIFTY':
+            case 'MIDCPNIFTY':
+            default:
+                targetDay = 2; // Tuesday
+                break;
+        }
+
+        let daysToAdd = targetDay - dayOfWeek;
+        // If the target day has already passed this week (or is today), move to the next week
+        if (daysToAdd < 0) {
+            daysToAdd += 7;
+        }
+
+        const expiryDate = new Date(today);
+        expiryDate.setDate(today.getDate() + daysToAdd);
+        
+        const newExpiryString = expiryDate.toISOString().split('T')[0];
+        if (expiryDateEl.value !== newExpiryString) {
+            expiryDateEl.value = newExpiryString;
+            logMessage('INFO', `Default expiry for ${indexSymbol} set to ${newExpiryString}.`);
+        }
+    }
+
+    // --- Event Listeners ---
+    fetchChainBtn.addEventListener('click', async () => { stopAutoRefresh(); const selectedOptionEl = indexSelectEl.options[indexSelectEl.selectedIndex]; const instrumentKey = selectedOptionEl.dataset.instrumentKey; const indexSymbol = selectedOptionEl.value; const expiry = expiryDateEl.value; currentLotSize = parseInt(selectedOptionEl.dataset.lotSize) || 75; if (!instrumentKey || !expiry) { alert('Select index & expiry.'); return; } logMessage('INFO', `Fetching: ${indexSymbol} (${instrumentKey}), Lot: ${currentLotSize}, Expiry: ${expiry}`); setLoading(true); indexLtpEl.textContent = 'Fetching...'; indexLtpTimestampEl.textContent = ''; atmStrikeDisplayEl.textContent = '-'; totalCallOIEl.textContent = '-'; totalPutOIEl.textContent = '-'; grandTotalCallOIEl.textContent = '-'; grandTotalPutOIEl.textContent = '-'; optionChainTableBody.innerHTML = `<tr><td colspan="15" class="text-center">Fetching chain...</td></tr>`; try { const indexLtp = await fetchIndexLtp(instrumentKey); if (indexLtp !== null) { const strikeDataArray = await fetchOptionChain(instrumentKey, expiry); if (strikeDataArray) { processAndDisplayOptions(strikeDataArray, indexLtp); } else { optionChainTableBody.innerHTML = `<tr><td colspan="15">Failed loading chain.</td></tr>`; setLoading(false); } } else { optionChainTableBody.innerHTML = `<tr><td colspan="15">Failed loading index LTP.</td></tr>`; setLoading(false); } } catch (error) { logMessage('ERROR', `Fetch sequence error: ${error.message}`); setLoading(false); optionChainTableBody.innerHTML = `<tr><td colspan="15">Unexpected error.</td></tr>`; } });
+    buySelectedBtn.addEventListener('click', placeMultiOrder);
+    clearLogsBtn.addEventListener('click', clearLogs);
+    indexSelectEl.addEventListener('change', (event) => { 
+        stopAutoRefresh(); 
+        const selectedOptionEl = event.target.options[event.target.selectedIndex]; 
+        currentLotSize = parseInt(selectedOptionEl.dataset.lotSize) || 75; 
+        logMessage('INFO', `Index changed to ${selectedOptionEl.text}. Lot Size: ${currentLotSize}`); 
+        setDefaultExpiryDate();
+        optionChainTableBody.innerHTML = '<tr><td colspan="15" class="text-center">Index changed. Fetch new chain.</td></tr>'; 
+        buySelectedBtn.disabled = true; 
+        indexLtpEl.textContent = '-'; 
+        indexLtpTimestampEl.textContent = ''; 
+        atmStrikeDisplayEl.textContent = '-'; 
+        totalCallOIEl.textContent = '-'; 
+        totalPutOIEl.textContent = '-'; 
+        grandTotalCallOIEl.textContent = '-'; 
+        grandTotalPutOIEl.textContent = '-'; 
+    });
+    expiryDateEl.addEventListener('change', () => { stopAutoRefresh(); });
+    autoRefreshCheckbox.addEventListener('change', () => { if (autoRefreshCheckbox.checked) { if (optionChainTableBody.rows.length <= 1) { alert('Please "Fetch Chain" manually once before enabling auto-refresh.'); autoRefreshCheckbox.checked = false; return; } startAutoRefresh(); } else { stopAutoRefresh(); } });
+    optionChainTableBody.addEventListener('change', event => { if (event.target.classList.contains('option-select')) { togglePriceInput(event.target); } });
+    document.querySelectorAll('input[name="orderType"]').forEach(radio => { radio.addEventListener('change', () => { optionChainTableBody.querySelectorAll('.option-select:checked').forEach(checkbox => { togglePriceInput(checkbox); }); }); });
+    confirmSquareOffCheckbox.addEventListener('change', updateConfirmSquareOffState);
+    squareOffBtn.addEventListener('click', () => { if (!accessToken || !confirmSquareOffCheckbox.checked) { logMessage('ERROR', 'Square off requires a loaded token and confirmation checkbox to be checked.'); return; } const offsetValue = parseFloat(priceOffsetInput.value); if (isNaN(offsetValue) || offsetValue < 0) { logMessage('ERROR', 'Invalid Price Offset value. Must be zero or positive.'); return; } performFullSquareOffProcedure(); });
+
+    // --- Initialization ---
+    document.addEventListener('DOMContentLoaded', () => { 
+        const selectedOptionEl = indexSelectEl.options[indexSelectEl.selectedIndex]; 
+        currentLotSize = parseInt(selectedOptionEl.dataset.lotSize) || 75; 
+        setDefaultExpiryDate();
+        getAccessToken(); 
+        setLoading(false); 
+        logMessage('INFO', `Page loaded. Initial Index: ${selectedOptionEl.text}, Lot Size: ${currentLotSize}.`); 
+        logMessage('WARN', 'CRITICAL: The Upstox API for order placement typically requires `instrument_token`. This tool uses `instrument_key` as provided by the chain endpoint. Orders may fail if the API strictly requires `instrument_token`.'); 
+    });
+</script>
+</body>
+</html>

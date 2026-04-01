@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Position Monitor & Auto-Bot</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        body { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .card { background-color: #1e1e1e; border: 1px solid #333; }
+        .card-header { font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+        .ltp-large { font-size: 2.5rem; font-weight: 700; }
+        .text-up { color: #00e676; }
+        .text-down { color: #ff5252; }
+        .ohlc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.85rem; }
+        .ohlc-item { background: #2c2c2c; padding: 4px; border-radius: 4px; display: flex; justify-content: space-between; }
+        .monitor-panel { border-left: 4px solid #333; }
+        .monitor-panel.active { border-left: 4px solid #00e676; box-shadow: 0 0 15px rgba(0, 230, 118, 0.1); }
+        .status-badge { font-size: 0.8rem; padding: 5px 10px; border-radius: 12px; }
+        .bg-running { background-color: #004d40; color: #00e676; border: 1px solid #00e676; }
+        .bg-stopped { background-color: #3e2723; color: #ff5252; border: 1px solid #ff5252; }
+        input[type="number"] { background-color: #2c2c2c; color: white; border: 1px solid #444; }
+        input[type="number"]:focus { background-color: #333; color: white; border-color: #00e676; outline: none; }
+        .log-box { height: 150px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; background: #000; padding: 10px; border: 1px solid #333; }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid py-3">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom border-secondary pb-2">
+        <h4><i class="bi bi-robot"></i> Auto-Exit Monitor</h4>
+        <div>
+            <span id="connectionStatus" class="badge bg-secondary">Checking Token...</span>
+            <button class="btn btn-sm btn-outline-light ms-2" onclick="window.close()">Close Tab</button>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <!-- Index Monitor -->
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header border-secondary text-info"><i class="bi bi-graph-up"></i> Index (<span id="indexName">NIFTY</span>)</div>
+                <div class="card-body text-center">
+                    <div id="indexLtp" class="ltp-large text-light">Loading...</div>
+                    <div class="text-muted small mb-3" id="indexTime">-</div>
+                    <div class="ohlc-grid">
+                        <div class="ohlc-item"><span>Open</span> <span id="idxOpen" class="fw-bold">-</span></div>
+                        <div class="ohlc-item"><span>High</span> <span id="idxHigh" class="text-up fw-bold">-</span></div>
+                        <div class="ohlc-item"><span>Low</span> <span id="idxLow" class="text-down fw-bold">-</span></div>
+                        <div class="ohlc-item"><span>Prev.C</span> <span id="idxClose">-</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Option Monitor -->
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header border-secondary text-warning"><i class="bi bi-ticket-perforated"></i> Option Position</div>
+                <div class="card-body">
+                    <h5 id="optionSymbol" class="text-center mb-0">Loading...</h5>
+                    <div class="text-center">
+                        <div id="optLtp" class="ltp-large text-light">0.00</div>
+                        <div class="badge bg-dark border border-secondary mb-3">Avg Buy: <span id="avgBuyPrice">0.00</span></div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mb-2 px-3">
+                        <div class="text-start">
+                            <small class="text-muted d-block">P&L Points</small>
+                            <span id="pnlPoints" class="fs-5 fw-bold">-</span>
+                        </div>
+                        <div class="text-end">
+                            <small class="text-muted d-block">P&L %</small>
+                            <span id="pnlPercent" class="fs-5 fw-bold">-</span>
+                        </div>
+                    </div>
+
+                    <div class="ohlc-grid mt-2">
+                        <div class="ohlc-item"><span>Open</span> <span id="optOpen">-</span></div>
+                        <div class="ohlc-item"><span>High</span> <span id="optHigh" class="text-up">-</span></div>
+                        <div class="ohlc-item"><span>Low</span> <span id="optLow" class="text-down">-</span></div>
+                        <div class="ohlc-item"><span>Close</span> <span id="optClose">-</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Auto-Exit Controls -->
+        <div class="col-md-4">
+            <div id="controlPanel" class="card h-100 monitor-panel">
+                <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-joystick"></i> Auto-Exit Config</span>
+                    <span id="botStatus" class="status-badge bg-stopped">STOPPED</span>
+                </div>
+                <div class="card-body">
+                    
+                    <!-- Target Section -->
+                    <label class="form-label text-up fw-bold small"><i class="bi bi-crosshair"></i> Target Price</label>
+                    <div class="input-group input-group-sm mb-3">
+                        <input type="number" id="targetPrice" class="form-control" placeholder="Price">
+                        <button class="btn btn-outline-secondary" type="button" onclick="calcPrice('target', 10)">+10%</button>
+                        <button class="btn btn-outline-secondary" type="button" onclick="calcPrice('target', 20)">+20%</button>
+                    </div>
+
+                    <!-- Stoploss Section -->
+                    <label class="form-label text-down fw-bold small"><i class="bi bi-shield-x"></i> Stoploss Price</label>
+                    <div class="input-group input-group-sm mb-3">
+                        <input type="number" id="slPrice" class="form-control" placeholder="Price">
+                        <button class="btn btn-outline-secondary" type="button" onclick="calcPrice('sl', 10)">-10%</button>
+                        <button class="btn btn-outline-secondary" type="button" onclick="calcPrice('sl', 20)">-20%</button>
+                    </div>
+
+                    <!-- Quantity & Qty Logic -->
+                    <div class="row g-2 mb-3">
+                         <div class="col-6">
+                            <label class="form-label small text-muted">Quantity to Exit</label>
+                            <input type="number" id="exitQty" class="form-control form-control-sm" value="0">
+                         </div>
+                         <div class="col-6">
+                            <label class="form-label small text-muted">Order Type</label>
+                            <select id="exitOrderType" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                <option value="MARKET">MARKET</option>
+                                <option value="LIMIT">LIMIT (LTP-0.5)</option>
+                            </select>
+                         </div>
+                    </div>
+
+                    <!-- Activate Button -->
+                    <div class="d-grid gap-2">
+                        <button id="toggleBotBtn" class="btn btn-outline-light">Enable Auto-Exit</button>
+                        <button id="emergencyExitBtn" class="btn btn-danger fw-bold"><i class="bi bi-lightning-fill"></i> EXIT NOW</button>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logs -->
+    <div class="mt-3">
+        <h6 class="text-muted small">Activity Log</h6>
+        <div id="logs" class="log-box"></div>
+    </div>
+</div>
+
+<script>
+    // --- Configuration ---
+    const API_BASE_URL = 'https://api.upstox.com/v2';
+    const ACCESS_TOKEN_KEY = 'upstoxAccessToken';
+    
+    // --- State ---
+    let accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
+    let monitorInterval = null;
+    let isBotRunning = false;
+    let isExiting = false; // Prevent double firing
+    
+    // --- URL Params ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const instrumentKey = urlParams.get('key'); // e.g., NSE_FO|...
+    const buyPrice = parseFloat(urlParams.get('price')) || 0;
+    const qty = parseInt(urlParams.get('qty')) || 0;
+    const symbol = urlParams.get('symbol') || instrumentKey;
+    const indexKey = urlParams.get('index') || 'NSE_INDEX|Nifty 50'; // Default Nifty
+
+    // --- DOM Elements ---
+    const els = {
+        idxLtp: document.getElementById('indexLtp'),
+        idxTime: document.getElementById('indexTime'),
+        optLtp: document.getElementById('optLtp'),
+        targetInput: document.getElementById('targetPrice'),
+        slInput: document.getElementById('slPrice'),
+        botBtn: document.getElementById('toggleBotBtn'),
+        statusBadge: document.getElementById('botStatus'),
+        controlPanel: document.getElementById('controlPanel'),
+        exitQty: document.getElementById('exitQty'),
+        logs: document.getElementById('logs')
+    };
+
+    // --- Init ---
+    function init() {
+        if (!accessToken) {
+            alert("No Access Token found. Please login on the main page.");
+            document.getElementById('connectionStatus').className = 'badge bg-danger';
+            document.getElementById('connectionStatus').textContent = 'No Token';
+            return;
+        }
+        document.getElementById('connectionStatus').className = 'badge bg-success';
+        document.getElementById('connectionStatus').textContent = 'Connected';
+
+        // Set Initial Values
+        document.getElementById('avgBuyPrice').textContent = buyPrice.toFixed(2);
+        document.getElementById('optionSymbol').textContent = symbol;
+        els.exitQty.value = qty;
+
+        // Start Monitoring
+        fetchQuotes(); // First run immediately
+        monitorInterval = setInterval(fetchQuotes, 1000); // 1 sec poll
+        
+        log(`Monitor started for ${symbol} @ ${buyPrice}`);
+    }
+
+    // --- Core Logic ---
+    async function fetchQuotes() {
+        if (isExiting) return;
+
+        try {
+            const keys = `${indexKey},${instrumentKey}`;
+            const response = await fetch(`${API_BASE_URL}/market-quote/quotes?instrument_key=${encodeURIComponent(keys)}`, {
+                headers: { 'Authorization': `Bearer ${accessToken}`, 'Accept': 'application/json' }
+            });
+            const json = await response.json();
+            
+            if (json.status === 'success' && json.data) {
+                // 1. Update Index UI
+                const idxData = json.data[indexKey.replace('|', ':')];
+                if (idxData) updateIndexUI(idxData);
+
+                // 2. Update Option UI
+                const optData = json.data[instrumentKey.replace('|', ':')];
+                if (optData) {
+                    updateOptionUI(optData);
+                    // 3. Check Triggers
+                    if (isBotRunning) checkAutoExit(optData.last_price);
+                }
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function updateIndexUI(data) {
+        const ltp = data.last_price;
+        els.idxLtp.textContent = ltp.toFixed(2);
+        els.idxLtp.className = `ltp-large ${ltp >= data.ohlc.close ? 'text-up' : 'text-down'}`;
+        document.getElementById('idxOpen').textContent = data.ohlc.open;
+        document.getElementById('idxHigh').textContent = data.ohlc.high;
+        document.getElementById('idxLow').textContent = data.ohlc.low;
+        document.getElementById('idxClose').textContent = data.ohlc.close;
+        els.idxTime.textContent = new Date(parseInt(data.last_trade_time)).toLocaleTimeString();
+    }
+
+    function updateOptionUI(data) {
+        const ltp = data.last_price;
+        els.optLtp.textContent = ltp.toFixed(2);
+        
+        // Color based on Buy Price
+        els.optLtp.className = `ltp-large ${ltp >= buyPrice ? 'text-up' : 'text-down'}`;
+
+        document.getElementById('optOpen').textContent = data.ohlc.open;
+        document.getElementById('optHigh').textContent = data.ohlc.high;
+        document.getElementById('optLow').textContent = data.ohlc.low;
+        document.getElementById('optClose').textContent = data.ohlc.close;
+
+        // Calc P&L
+        const diff = ltp - buyPrice;
+        const percent = (diff / buyPrice) * 100;
+        
+        const pnlEl = document.getElementById('pnlPoints');
+        pnlEl.textContent = (diff > 0 ? "+" : "") + diff.toFixed(2);
+        pnlEl.className = `fs-5 fw-bold ${diff >= 0 ? 'text-up' : 'text-down'}`;
+
+        const pnlPerEl = document.getElementById('pnlPercent');
+        pnlPerEl.textContent = percent.toFixed(2) + "%";
+        pnlPerEl.className = `fs-5 fw-bold ${diff >= 0 ? 'text-up' : 'text-down'}`;
+    }
+
+    function checkAutoExit(currentLtp) {
+        const target = parseFloat(els.targetInput.value);
+        const sl = parseFloat(els.slInput.value);
+
+        if (target && currentLtp >= target) {
+            triggerExit("TARGET HIT");
+        } else if (sl && currentLtp <= sl) {
+            triggerExit("STOPLOSS HIT");
+        }
+    }
+
+    async function triggerExit(reason) {
+        if (isExiting) return;
+        isExiting = true;
+        stopBot();
+        
+        const qty = els.exitQty.value;
+        const type = document.getElementById('exitOrderType').value;
+        log(`⚡ ${reason}: Triggering Exit for ${qty} qty via ${type}...`);
+
+        // Determine price for LIMIT orders (for Market, price is 0)
+        // If Buying, we Sell. If Limit Sell, price should be slightly lower than LTP to ensure fill, 
+        // but API usually expects exact or better. For safety in this script, let's use Market or LTP.
+        // Assuming current position is Long (Buy), we need to SELL.
+        
+        const currentLtp = parseFloat(els.optLtp.textContent);
+        const limitPrice = type === 'LIMIT' ? (currentLtp - 0.5).toFixed(1) : 0; 
+
+        const payload = {
+            quantity: parseInt(qty),
+            product: 'D', // Delivery/Intraday usually handled same in Upstox V2 for closure
+            validity: 'DAY',
+            price: parseFloat(limitPrice),
+            tag: 'auto_exit',
+            instrument_token: instrumentKey,
+            order_type: type,
+            transaction_type: 'SELL',
+            disclosed_quantity: 0,
+            trigger_price: 0,
+            is_amo: false
+        };
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/order/place`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+            const res = await response.json();
+            
+            if (res.status === 'success') {
+                log(`✅ ORDER PLACED. ID: ${res.data.order_id}`);
+                alert(`${reason}\nExit Order Placed Successfully!`);
+                window.close(); // Optional: Close tab after success
+            } else {
+                log(`❌ FAILED: ${JSON.stringify(res)}`);
+                isExiting = false; // Allow retry
+            }
+        } catch (e) {
+            log(`❌ API ERROR: ${e.message}`);
+            isExiting = false;
+        }
+    }
+
+    // --- Helpers ---
+    function toggleBot() {
+        if (isBotRunning) {
+            stopBot();
+        } else {
+            // Validation
+            const target = parseFloat(els.targetInput.value);
+            const sl = parseFloat(els.slInput.value);
+            if (!target && !sl) {
+                alert("Please set a Target or Stoploss first.");
+                return;
+            }
+            startBot();
+        }
+    }
+
+    function startBot() {
+        isBotRunning = true;
+        els.botBtn.textContent = "Stop Auto-Exit";
+        els.botBtn.className = "btn btn-outline-danger";
+        els.statusBadge.textContent = "RUNNING";
+        els.statusBadge.className = "status-badge bg-running";
+        els.controlPanel.classList.add('active');
+        els.targetInput.disabled = true;
+        els.slInput.disabled = true;
+        log("Bot Started. Monitoring triggers...");
+    }
+
+    function stopBot() {
+        isBotRunning = false;
+        els.botBtn.textContent = "Enable Auto-Exit";
+        els.botBtn.className = "btn btn-outline-light";
+        els.statusBadge.textContent = "STOPPED";
+        els.statusBadge.className = "status-badge bg-stopped";
+        els.controlPanel.classList.remove('active');
+        els.targetInput.disabled = false;
+        els.slInput.disabled = false;
+        log("Bot Stopped.");
+    }
+
+    function calcPrice(type, percent) {
+        if (buyPrice === 0) return;
+        if (type === 'target') {
+            const val = buyPrice + (buyPrice * (percent / 100));
+            els.targetInput.value = val.toFixed(1);
+        } else {
+            const val = buyPrice - (buyPrice * (percent / 100));
+            els.slInput.value = val.toFixed(1);
+        }
+    }
+
+    function log(msg) {
+        const time = new Date().toLocaleTimeString();
+        els.logs.innerHTML = `<div><span class="text-muted">[${time}]</span> ${msg}</div>` + els.logs.innerHTML;
+    }
+
+    // --- Event Listeners ---
+    els.botBtn.addEventListener('click', toggleBot);
+    document.getElementById('emergencyExitBtn').addEventListener('click', () => {
+        if(confirm("Are you sure you want to EXIT MARKET immediately?")) {
+            triggerExit("EMERGENCY MANUAL EXIT");
+        }
+    });
+
+    init();
+</script>
+</body>
+</html>

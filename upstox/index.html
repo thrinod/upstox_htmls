@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upstox v2 Tools</title>
+    <style>
+        /* (Keep existing styles) */
+        body { font-family: sans-serif; padding: 30px; max-width: 600px; margin: auto; line-height: 1.6; }
+        h1 { text-align: center; color: #333; }
+        .nav-links { list-style: none; padding: 0; margin-top: 30px; }
+        .nav-links li { margin-bottom: 15px; }
+        .nav-links a {
+            display: block;
+            padding: 15px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            text-align: center;
+            transition: background-color 0.3s;
+        }
+        /* Add a different style for the high-risk button */
+        .nav-links a.high-risk {
+            background-color: #dc3545; /* Red background */
+        }
+        .nav-links a.high-risk:hover {
+            background-color: #c82333; /* Darker red on hover */
+        }
+        .nav-links a:hover { background-color: #0056b3; } /* Hover for normal buttons */
+        .warning {
+             background-color: #fff3cd; color: #856404; padding: 15px;
+             border: 1px solid #ffeeba; border-radius: 4px; margin-top: 20px;
+             text-align: center;
+         }
+         strong.sec-warn { color: #dc3545;} /* Different class for emphasis */
+    </style>
+</head>
+<body>
+
+    <h1>Upstox v2 API Tools</h1>
+
+    <div class="warning">
+        <strong class="sec-warn">Security Warning:</strong> These tools handle sensitive API credentials directly in your browser. This is insecure and intended ONLY for temporary, personal testing. Do NOT use in production or shared environments. Functionality depends on Upstox API CORS settings. API v2 is used.
+    </div>
+
+    <ul class="nav-links">
+        <li><a href="auth_v2.html">1. Authenticate & Get Token (v2)</a></li>
+        <li><a href="positions_v2.html">2. View Positions & P&L (v2)</a></li>
+        <li><a href="roboputtraderwithsell.html">3. Robo Put Trader</a></li>
+        <li><a href="robocalltraderwithsell.html">4. Robo Call Trader</a></li>
+        <li><a href="optionchain.html">-> Nifty/Sensex Options Chain & Order (v2)</a></li>
+        <li><a href="mockoptionchain.html">->(Mock) Auto Option Chain</a></li>
+        <li><a href="square_off_v3.html" class="high-risk">5. Auto Square Off Trigger</a></li>
+        <!-- <li><a href="searchfeed.html">5. Search Feed</a></li> -->
+        <!-- <li><a href="watchlist.html">6. Watch List</a></li> -->
+        <li><a href="robosquareoff.html">6. Robo square off</a></li>
+        
+        <!-- == END OF ADDED LINK == -->
+        <!-- Add links to other future pages here -->
+    </ul>
+
+</body>
+</html>

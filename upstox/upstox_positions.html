@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upstox Nifty/Sensex Positions</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+        }
+        h1, h2 {
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        .positions-container {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .position-item {
+            border-bottom: 1px dashed #eee;
+            padding: 10px 0;
+        }
+        .position-item:last-child {
+            border-bottom: none;
+        }
+        .position-item span {
+            display: inline-block;
+            min-width: 100px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+        .loading {
+            font-style: italic;
+            color: #888;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+            margin-bottom: 20px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Upstox Portfolio Positions</h1>
+    <div class="nav-back">
+        <a href="index.html">« Back to Main Menu</a> |
+        <a href="auth_v2.html">Go to Authentication </a> |
+        <a href="square_off_v2.html">Square Off »</a>
+    </div>
+    <p style="color: red; font-weight: bold;">
+        IMPORTANT: This page requires a valid Upstox Access Token.
+        Do NOT hardcode your API Secret here. Obtain the token securely.
+    </p>
+
+    <div>
+        <label for="accessToken">Enter Your Upstox Access Token:</label><br>
+        <input type="text" id="accessToken" size="60">
+        <button id="fetchPositionsBtn">Fetch Positions</button>
+    </div>
+    <hr>
+
+    <div id="status"></div>
+
+    <div class="positions-container">
+        <h2>Nifty Expiry Positions</h2>
+        <div id="nifty-positions" class="loading">Click "Fetch Positions" to load...</div>
+    </div>
+
+    <div class="positions-container">
+        <h2>Sensex Expiry Positions</h2>
+        <div id="sensex-positions" class="loading">Click "Fetch Positions" to load...</div>
+    </div>
+
+    <script>
+        const niftyPositionsDiv = document.getElementById('nifty-positions');
+        const sensexPositionsDiv = document.getElementById('sensex-positions');
+        const statusDiv = document.getElementById('status');
+        const fetchButton = document.getElementById('fetchPositionsBtn');
+        const accessTokenInput = document.getElementById('accessToken');
+
+        const UPSTOX_API_BASE_URL = 'https://api.upstox.com/v2'; // Use the correct base URL
+
+        async function fetchUpstoxPositions(accessToken) {
+            statusDiv.textContent = 'Fetching positions...';
+            statusDiv.className = 'loading';
+            niftyPositionsDiv.innerHTML = '<div class="loading">Loading...</div>';
+            sensexPositionsDiv.innerHTML = '<div class="loading">Loading...</div>';
+
+            if (!accessToken) {
+                 statusDiv.textContent = 'Error: Access Token is required.';
+                 statusDiv.className = 'error';
+                 return;
+            }
+
+            const positionsUrl = `${UPSTOX_API_BASE_URL}/portfolio/positions`;
+
+            try {
+                const response = await fetch(positionsUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Authorization': `Bearer ${accessToken}` // Use the provided token
+                    }
+                });
+
+                if (!response.ok) {
+                    // Attempt to get error details from Upstox response
+                    let errorMsg = `HTTP error! Status: ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        errorMsg += ` - ${errorData.errors?.[0]?.message || response.statusText}`;
+                    } catch (e) {
+                        // Ignore if response is not JSON
+                    }
+                    throw new Error(errorMsg);
+                }
+
+                const data = await response.json();
+
+                if (data.status === 'success' && data.data) {
+                    statusDiv.textContent = 'Positions fetched successfully.';
+                    statusDiv.className = 'success'; // You might want a CSS class for success
+                    displayPositions(data.data);
+                } else {
+                    throw new Error(data.message || 'Failed to fetch positions. Unexpected API response format.');
+                }
+
+            } catch (error) {
+                console.error('Error fetching Upstox positions:', error);
+                statusDiv.textContent = `Error: ${error.message}. Check console for details. (CORS issues are common).`;
+                statusDiv.className = 'error';
+                niftyPositionsDiv.innerHTML = '<div class="error">Failed to load data.</div>';
+                sensexPositionsDiv.innerHTML = '<div class="error">Failed to load data.</div>';
+            }
+        }
+
+        function displayPositions(positions) {
+            niftyPositionsDiv.innerHTML = ''; // Clear previous data
+            sensexPositionsDiv.innerHTML = ''; // Clear previous data
+            let niftyFound = false;
+            let sensexFound = false;
+
+            positions.forEach(pos => {
+                // Basic filtering for Nifty/Sensex derivatives (Futures/Options)
+                // Adjust these checks if needed based on exact Upstox trading symbols
+                const symbol = pos.tradingsymbol || '';
+                const instrumentType = pos.instrument_type || ''; // e.g., 'OPTIDX', 'FUTIDX'
+
+                // Create HTML content for the position details
+                const positionHtml = `
+                    <div class="position-item">
+                        <span>Symbol:</span> ${symbol} <br>
+                        <span>Quantity:</span> ${pos.quantity} <br>
+                        <span>Avg Price:</span> ${pos.average_price?.toFixed(2) ?? 'N/A'} <br>
+                        <span>LTP:</span> ${pos.last_price?.toFixed(2) ?? 'N/A'} <br>
+                        <span>P&L:</span> <span style="color: ${pos.pnl >= 0 ? 'green' : 'red'};">${pos.pnl?.toFixed(2) ?? 'N/A'}</span> <br>
+                        <span>Day P&L:</span> <span style="color: ${pos.day_pnl >= 0 ? 'green' : 'red'};">${pos.day_pnl?.toFixed(2) ?? 'N/A'}</span> <br>
+                        <span>Type:</span> ${pos.product} / ${pos.position_type ?? instrumentType}
+                    </div>
+                `;
+
+                if (symbol.toUpperCase().startsWith('NIFTY')) {
+                   niftyPositionsDiv.innerHTML += positionHtml;
+                   niftyFound = true;
+                } else if (symbol.toUpperCase().startsWith('SENSEX') || symbol.toUpperCase().startsWith('BSX')) { // Sensex might use BSX prefix too
+                    sensexPositionsDiv.innerHTML += positionHtml;
+                    sensexFound = true;
+                }
+            });
+
+            if (!niftyFound) {
+                niftyPositionsDiv.innerHTML = 'No open Nifty expiry positions found.';
+            }
+            if (!sensexFound) {
+                sensexPositionsDiv.innerHTML = 'No open Sensex expiry positions found.';
+            }
+        }
+
+        // --- Event Listener ---
+        fetchButton.addEventListener('click', () => {
+            const token = accessTokenInput.value.trim();
+            fetchUpstoxPositions(token);
+        });
+
+    </script>
+
+</body>
+</html>

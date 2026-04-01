@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upstox v2 Interface</title>
+    <style>
+        body { font-family: sans-serif; padding: 15px; max-width: 900px; margin: auto; font-size: 14px; }
+        .tab-container { border: 1px solid #ccc; border-radius: 4px; overflow: hidden; }
+        .tab-buttons { display: flex; border-bottom: 1px solid #ccc; background-color: #f1f1f1; }
+        .tab-button {
+            padding: 10px 15px;
+            cursor: pointer;
+            border: none;
+            background-color: inherit;
+            border-right: 1px solid #ccc;
+            outline: none;
+            transition: background-color 0.3s;
+        }
+        .tab-button:last-child { border-right: none; }
+        .tab-button.active { background-color: #ccc; font-weight: bold; }
+        .tab-button:hover:not(.active) { background-color: #ddd; }
+
+        .tab-content { display: none; padding: 20px; border-top: none; }
+        .tab-content.active { display: block; }
+
+        label { display: block; margin-top: 12px; font-weight: bold; }
+        input[type="text"], input[type="password"], textarea {
+             width: 95%; padding: 8px; margin-top: 5px; border: 1px solid #ccc; font-size: 0.95em;
+        }
+        textarea { min-height: 60px; font-family: monospace;}
+        button.action-button {
+            padding: 10px 15px;
+            margin-top: 15px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 0.95em;
+        }
+        button.action-button:hover { background-color: #0056b3; }
+        button.cancel-button { background-color: #dc3545; }
+        button.cancel-button:hover { background-color: #c82333; }
+        button:disabled { background-color: #aaa; cursor: not-allowed; }
+
+        .results-area, .log-area {
+             margin-top: 15px; padding: 10px; border: 1px solid #eee;
+             background-color: #f8f9fa; min-height: 80px; white-space: pre-wrap;
+             word-wrap: break-word; font-family: monospace; font-size: 0.9em;
+             max-height: 300px; overflow-y: auto;
+        }
+        .error { color: #dc3545; font-weight: bold; }
+        .success { color: #28a745; font-weight: bold; }
+        .warning { color: #ffc107; }
+        .info { color: #17a2b8; }
+        strong.security-warning { color: #dc3545; background-color: yellow; padding: 2px 4px;}
+        .token-display { font-weight: bold; color: #0056b3; }
+    </style>
+</head>
+<body>
+
+    <h1>Upstox v2 API Interface (Browser-Based)</h1>
+    <p><strong class="security-warning">SECURITY WARNING:</strong> Entering API Secrets or Access Tokens directly into a browser is INSECURE. Use only for temporary personal testing.</p>
+    <hr>
+
+    <div class="tab-container">
+        <div class="tab-buttons">
+            <button class="tab-button active" data-tab="tabAuth">1. Authentication (v2)</button>
+            <button class="tab-button" data-tab="tabCancel">2. Cancel Orders (v2)</button>
+            <!-- Add more tab buttons here if needed -->
+        </div>
+
+        <!-- Authentication Tab Content -->
+        <div id="tabAuth" class="tab-content active">
+            <h2>Step 1: Get Authorization Code</h2>
+            <p>Enter your Upstox v2 App details. These are used locally in your browser to generate the login link.</p>
+             <p><strong class="security-warning">Never commit your API Secret to code repositories.</strong></p>
+
+            <label for="apiKey">API Key (Client ID):</label>
+            <input type="text" id="apiKey" placeholder="Your v2 API Key">
+
+            <label for="apiSecret">API Secret:</label>
+            <input type="password" id="apiSecret" placeholder="Your v2 API Secret (Keep Secure!)">
+
+            <label for="redirectUri">Redirect URI:</label>
+            <input type="text" id="redirectUri" placeholder="e.g., http://127.0.0.1 or your registered URI">
+
+            <button id="generateUrlBtn" class="action-button">Generate Login URL</button>
+
+            <div class="results-area" id="authUrlResult">Login URL will appear here...</div>
+
+            <hr style="margin: 25px 0;">
+
+            <h2>Step 2: Exchange Code for Access Token</h2>
+            <p>After logging in via the generated URL and authorizing, Upstox will redirect you. Copy the `code` parameter from the redirected URL's address bar and paste it below.</p>
+
+            <label for="authCode">Authorization Code:</label>
+            <input type="text" id="authCode" placeholder="Paste the 'code' from the redirect URL here">
+
+            <button id="getTokenBtn" class="action-button">Get Access Token</button>
+
+            <div class="results-area" id="tokenResult">Access Token result will appear here...</div>
+             <p style="margin-top: 10px;"><strong>Current Access Token:</strong> <span id="currentTokenDisplay" class="token-display">Not set</span></p>
+        </div>
+
+        <!-- Cancel Orders Tab Content -->
+        <div id="tabCancel" class="tab-content">
+            <h2>Cancel All Open Orders (v2 API)</h2>
+             <p>This will use the Access Token obtained from the Authentication tab.</p>
+             <p><strong>Current Access Token:</strong> <span id="currentTokenDisplayCancel" class="token-display">Not set</span></p>
+
+            <button id="cancelAllBtn" class="action-button cancel-button">Cancel ALL Open Orders</button>
+
+             <label for="cancelLog" style="margin-top:20px;">Cancellation Log:</label>
+            <div class="log-area" id="cancelLog">Actions will be logged here...</div>
+        </div>
+
+        <!-- Add more tab content divs here if needed -->
+
+    </div>
+
+    <script>
+        // --- Configuration & Globals ---
+        const UPSTOX_API_BASE_URL = "https://api.upstox.com";
+        const API_VERSION = "2.0"; // Explicitly using v2
+
+        // Global variable to store the access token
+        let currentAccessToken = null;
+
+        // --- DOM Elements ---
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const tabContents = document.querySelectorAll('.tab-content');
+        const apiKeyInput = document.getElementById('apiKey');
+        const apiSecretInput = document.getElementById('apiSecret');
+        const redirectUriInput = document.getElementById('redirectUri');
+        const generateUrlBtn = document.getElementById('generateUrlBtn');
+        const authUrlResultDiv = document.getElementById('authUrlResult');
+        const authCodeInput = document.getElementById('authCode');
+        const getTokenBtn = document.getElementById('getTokenBtn');
+        const tokenResultDiv = document.getElementById('tokenResult');
+        const currentTokenDisplay = document.getElementById('currentTokenDisplay');
+        const currentTokenDisplayCancel = document.getElementById('currentTokenDisplayCancel');
+        const cancelAllBtn = document.getElementById('cancelAllBtn');
+        const cancelLogDiv = document.getElementById('cancelLog');
+
+        // --- Helper Functions ---
+        function updateTokenDisplay(token) {
+             const displayValue = token ? `*****${token.slice(-6)}` : "Not set"; // Mask token for display
+             currentTokenDisplay.textContent = displayValue;
+             currentTokenDisplayCancel.textContent = displayValue;
+             if (token) {
+                 currentTokenDisplay.classList.add('success');
+                 currentTokenDisplayCancel.classList.add('success');
+             } else {
+                 currentTokenDisplay.classList.remove('success');
+                 currentTokenDisplayCancel.classList.remove('success');
+             }
+        }
+
+        function logTo(divElement, message, type = 'info') {
+            const entry = document.createElement('div');
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            entry.className = type;
+            divElement.appendChild(entry);
+            divElement.scrollTop = divElement.scrollHeight; // Auto-scroll
+        }
+
+        // --- Tab Switching Logic ---
+        function switchTab(event) {
+            const targetTab = event.target.dataset.tab;
+            if (!targetTab) return;
+
+            tabButtons.forEach(button => {
+                button.classList.remove('active');
+                if (button.dataset.tab === targetTab) {
+                    button.classList.add('active');
+                }
+            });
+
+            tabContents.forEach(content => {
+                content.classList.remove('active');
+                if (content.id === targetTab) {
+                    content.classList.add('active');
+                }
+            });
+        }
+
+        tabButtons.forEach(button => button.addEventListener('click', switchTab));
+
+        // --- Authentication Tab Logic (v2) ---
+        generateUrlBtn.addEventListener('click', () => {
+            const apiKey = apiKeyInput.value.trim();
+            const redirectUri = redirectUriInput.value.trim();
+
+            if (!apiKey || !redirectUri) {
+                authUrlResultDiv.textContent = 'Error: API Key and Redirect URI are required.';
+                authUrlResultDiv.className = 'results-area error';
+                return;
+            }
+
+            const authParams = new URLSearchParams({
+                client_id: apiKey,
+                redirect_uri: redirectUri,
+                response_type: 'code',
+                // state: 'optional_state_value' // Optional state parameter
+            });
+
+            const authUrl = `${UPSTOX_API_BASE_URL}/v2/login/authorization/dialog?${authParams.toString()}`;
+
+            authUrlResultDiv.textContent = `Login URL Generated:\n\n${authUrl}\n\nOpen this URL in your browser, log in, and authorize the app. Then copy the 'code' from the redirect URL.`;
+            authUrlResultDiv.className = 'results-area info';
+        });
+
+        getTokenBtn.addEventListener('click', async () => {
+            const apiKey = apiKeyInput.value.trim();
+            const apiSecret = apiSecretInput.value.trim(); // SECURITY RISK!
+            const redirectUri = redirectUriInput.value.trim();
+            const authCode = authCodeInput.value.trim();
+
+            if (!apiKey || !apiSecret || !redirectUri || !authCode) {
+                logTo(tokenResultDiv, 'Error: API Key, Secret, Redirect URI, and Authorization Code are required.', 'error');
+                return;
+            }
+
+            tokenResultDiv.innerHTML = ''; // Clear previous results
+            logTo(tokenResultDiv, 'Requesting Access Token...');
+            getTokenBtn.disabled = true;
+
+            const tokenUrl = `${UPSTOX_API_BASE_URL}/v2/login/authorization/token`;
+            const headers = {
+                'accept': 'application/json',
+                'Api-Version': API_VERSION,
+                'Content-Type': 'application/x-www-form-urlencoded' // Required for token endpoint
+            };
+            const body = new URLSearchParams({
+                'client_id': apiKey,
+                'client_secret': apiSecret, // Sending secret from browser - INSECURE!
+                'redirect_uri': redirectUri,
+                'grant_type': 'authorization_code',
+                'code': authCode
+            });
+
+            try {
+                const response = await fetch(tokenUrl, {
+                    method: 'POST',
+                    headers: headers,
+                    body: body.toString(), // Send as x-www-form-urlencoded string
+                    mode: 'cors'
+                });
+
+                const data = await response.json().catch(() => null);
+
+                if (response.ok && data && data.access_token) {
+                    currentAccessToken = data.access_token;
+                    logTo(tokenResultDiv, `Success! Access Token received.`, 'success');
+                    // logTo(tokenResultDiv, `Token: ${currentAccessToken}`, 'info'); // Optionally log full token
+                    updateTokenDisplay(currentAccessToken);
+                    authCodeInput.value = ''; // Clear code input
+                } else {
+                    const errorMsg = data?.error_description || data?.error || `HTTP ${response.status}: ${response.statusText}`;
+                    logTo(tokenResultDiv, `Error getting token: ${errorMsg}`, 'error');
+                    currentAccessToken = null;
+                    updateTokenDisplay(null);
+                }
+
+            } catch (error) {
+                logTo(tokenResultDiv, `Network or fetch error: ${error.message}`, 'error');
+                currentAccessToken = null;
+                updateTokenDisplay(null);
+            } finally {
+                getTokenBtn.disabled = false;
+            }
+        });
+
+        // --- Cancel Orders Tab Logic (v2) ---
+
+        // IMPORTANT: Verify these statuses against official Upstox v2 documentation!
+        const V2_OPEN_ORDER_STATUSES = [
+            "open",
+            "trigger pending",
+            "after market order req received"
+            // Add/remove statuses based on v2 API specs
+        ];
+
+        async function cancelSingleOrderV2(token, orderId) {
+            const cancelUrl = `${UPSTOX_API_BASE_URL}/v2/order/cancel?order_id=${encodeURIComponent(orderId)}`;
+            const headers = {
+                'Accept': 'application/json',
+                'Api-Version': API_VERSION,
+                'Authorization': `Bearer ${token}`
+            };
+            logTo(cancelLogDiv, `  Attempting cancellation for v2 order_id: ${orderId}...`);
+
+            try {
+                const response = await fetch(cancelUrl, {
+                    method: 'DELETE',
+                    headers: headers,
+                    mode: 'cors'
+                });
+                 // v2 Cancel might return 200 OK with specific payload for success/failure
+                 const responseData = await response.json().catch(() => ({ status: 'error', message: 'Failed to parse JSON response', http_code: response.status }));
+
+                // Check Upstox v2 documentation for exact success criteria for cancellation DELETE request
+                // Assuming here that a 200 OK and a specific status in payload means success
+                 if (response.ok && responseData.status === 'success') {
+                     const cancelledId = responseData?.data?.order_id || orderId;
+                     logTo(cancelLogDiv, `  ✅ SUCCESS cancelling v2 order_id: ${cancelledId}`, 'success');
+                     return { status: 'fulfilled', value: { orderId: cancelledId, success: true } };
+                 } else {
+                     const errorMsg = responseData?.message || responseData?.error || `HTTP ${response.status}`;
+                     logTo(cancelLogDiv, `  ❌ FAILED to cancel v2 order_id: ${orderId}. Reason: ${errorMsg}`, 'error');
+                     return { status: 'rejected', reason: { orderId: orderId, success: false, message: errorMsg } };
+                 }
+            } catch (error) {
+                logTo(cancelLogDiv, `  ❌ NETWORK/FETCH ERROR cancelling v2 order_id: ${orderId}. Reason: ${error.message}`, 'error');
+                return { status: 'rejected', reason: { orderId: orderId, success: false, message: `Network/Fetch Error: ${error.message}` } };
+            }
+        }
+
+        cancelAllBtn.addEventListener('click', async () => {
+            if (!currentAccessToken) {
+                logTo(cancelLogDiv, 'Error: No Access Token available. Please authenticate first.', 'error');
+                return;
+            }
+
+            cancelLogDiv.innerHTML = ''; // Clear previous logs
+            logTo(cancelLogDiv, 'Starting v2 order cancellation process...');
+            cancelAllBtn.disabled = true;
+
+            const getOrdersUrl = `${UPSTOX_API_BASE_URL}/v2/order/retrieve-all`;
+            const headers = {
+                'Accept': 'application/json',
+                'Api-Version': API_VERSION,
+                'Authorization': `Bearer ${currentAccessToken}`
+            };
+
+            try {
+                // 1. Fetch all orders (v2)
+                logTo(cancelLogDiv, 'Fetching all v2 orders...');
+                const response = await fetch(getOrdersUrl, { method: 'GET', headers: headers, mode: 'cors' });
+                const orderData = await response.json().catch(() => null);
+
+                 if (!response.ok || !orderData || orderData.status !== 'success') {
+                     const errorMsg = orderData?.message || `HTTP ${response.status}: Failed to fetch orders`;
+                     throw new Error(errorMsg);
+                 }
+
+                const allOrders = orderData.data || [];
+                 logTo(cancelLogDiv, `Retrieved ${allOrders.length} v2 orders total.`);
+
+                // 2. Filter for open orders (v2)
+                const openOrders = allOrders.filter(order =>
+                    order.status && V2_OPEN_ORDER_STATUSES.includes(order.status.toLowerCase()) && order.order_id
+                );
+
+                if (openOrders.length === 0) {
+                    logTo(cancelLogDiv, 'No open v2 orders found matching specified statuses.', 'success');
+                    return; // Exit early
+                }
+
+                logTo(cancelLogDiv, `Found ${openOrders.length} open v2 order(s) to cancel:`);
+                openOrders.forEach(o => logTo(cancelLogDiv, `  - ID: ${o.order_id}, Symbol: ${o.tradingsymbol || 'N/A'}, Status: ${o.status}`));
+                logTo(cancelLogDiv, '------------------------------------');
+                logTo(cancelLogDiv, 'Proceeding with cancellation attempts...');
+
+                // 3. Attempt to cancel each open order (v2)
+                const cancelPromises = openOrders.map(order => cancelSingleOrderV2(currentAccessToken, order.order_id));
+                const results = await Promise.allSettled(cancelPromises);
+
+                // 4. Summarize results
+                let successCount = 0;
+                let failureCount = 0;
+                results.forEach(result => {
+                    if (result.status === 'fulfilled' && result.value.success) successCount++;
+                    else failureCount++;
+                });
+
+                logTo(cancelLogDiv, '------------------------------------');
+                logTo(cancelLogDiv, 'Cancellation Summary:', 'info');
+                logTo(cancelLogDiv, `  Successfully cancelled: ${successCount}`, 'success');
+                logTo(cancelLogDiv, `  Failed attempts:      ${failureCount}`, failureCount > 0 ? 'error' : 'info');
+                logTo(cancelLogDiv, '------------------------------------');
+
+
+            } catch (error) {
+                logTo(cancelLogDiv, `Critical Error during process: ${error.message}`, 'error');
+                console.error("Detailed Error:", error);
+            } finally {
+                cancelAllBtn.disabled = false;
+            }
+        });
+
+        // --- Initial Setup ---
+        updateTokenDisplay(null); // Initialize token display on load
+
+    </script>
+
+</body>
+</html>

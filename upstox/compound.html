@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compound Interest Calculator with Withdrawals (INR)</title>
+    <!-- Include Chart.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        /* CSS styles */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh; /* Ensure body takes full height */
+        }
+
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 950px; /* Slightly wider */
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            box-sizing: border-box; /* Include padding in width */
+        }
+
+        .calculator-section,
+        .chart-section {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .chart-section {
+            height: 450px; /* Default height for larger screens */
+            position: relative;
+            border: 1px solid #eee;
+            padding: 15px;
+            margin-bottom: 20px; /* Add margin between charts */
+        }
+
+        #withdrawalChartSection {
+            border: 1px solid #eee;
+            padding: 15px;
+        }
+
+        h1,
+        h2 {
+            text-align: center;
+            color: #0056b3;
+            margin-bottom: 25px;
+            font-size: 1.8rem; /* Base size */
+        }
+        h2 {
+            font-size: 1.5rem; /* Base size */
+        }
+
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        input[type="number"],
+        select {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 1rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: #0056b3;
+            box-shadow: 0 0 5px rgba(0, 86, 179, 0.3);
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: background-color 0.3s ease;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        #results {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #e9ecef;
+            border-radius: 8px;
+            border-left: 5px solid #007bff;
+        }
+
+        #results p {
+            margin: 8px 0;
+            font-size: 1.1rem;
+        }
+
+        #results p strong {
+            color: #0056b3;
+        }
+
+        #results small {
+            font-size: 0.9em;
+            color: #555;
+        }
+
+        input:disabled {
+            background-color: #e9ecef;
+            cursor: not-allowed;
+        }
+
+        /* --- Responsive Adjustments --- */
+        @media (max-width: 768px) { /* Adjust breakpoint if needed */
+             .container {
+                padding: 20px;
+             }
+             h1 { font-size: 1.6rem; }
+             h2 { font-size: 1.3rem; }
+        }
+
+
+        @media (max-width: 600px) {
+            body {
+                padding: 10px; /* Reduce body padding */
+            }
+            .container {
+                padding: 15px; /* Reduce container padding further */
+                gap: 20px;
+            }
+            .form-grid {
+                grid-template-columns: 1fr; /* Single column layout */
+                gap: 15px;
+            }
+             h1 { font-size: 1.4rem; }
+             h2 { font-size: 1.2rem; }
+
+            .chart-section {
+                height: 350px; /* Adjust height for smaller screens */
+                padding: 10px;
+            }
+            #results p { font-size: 1rem; }
+            #results small { font-size: 0.85em; }
+            button { font-size: 1rem; padding: 10px 20px; }
+            input[type="number"], select { font-size: 0.95rem; padding: 8px;}
+            label { font-size: 0.9rem; }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="calculator-section">
+            <h1>Compound Interest Calculator with Withdrawals (INR)</h1>
+            <form id="calculatorForm">
+                <div class="form-grid">
+                    <!-- Initial Investment & Rate -->
+                    <div class="form-group">
+                        <label for="initialInvestment">Initial Investment (₹):</label>
+                        <input type="number" id="initialInvestment" value="1000000" min="0" step="any" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="annualRate">Annual Interest Rate (%):</label>
+                        <input type="number" id="annualRate" value="7" min="0" step="any" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="years">Investment Duration (Years):</label>
+                        <input type="number" id="years" value="20" min="1" step="1" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="compoundingFrequency">Compounding Frequency:</label>
+                        <select id="compoundingFrequency">
+                            <option value="12">Monthly</option>
+                            <option value="4">Quarterly</option>
+                            <option value="2">Half-Yearly</option>
+                            <option value="1" selected>Yearly</option>
+                        </select>
+                    </div>
+                    <!-- Contributions -->
+                    <div class="form-group">
+                        <label for="contributionInterval">Contribution Interval:</label>
+                        <select id="contributionInterval">
+                            <option value="0" selected>None</option>
+                            <option value="12">Monthly</option>
+                            <option value="4">Quarterly</option>
+                            <option value="2">Half-Yearly</option>
+                            <option value="1">Yearly</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="contributionAmount">Contribution Amount (₹):</label>
+                        <input type="number" id="contributionAmount" value="10000" min="0" step="any" disabled> <!-- Defaulted contribution for demo -->
+                    </div>
+                    <!-- Withdrawals -->
+                    <div class="form-group">
+                        <label for="withdrawalInterval">Withdrawal Interval:</label>
+                        <select id="withdrawalInterval">
+                            <option value="0" selected>None</option>
+                            <option value="12">Monthly</option>
+                            <option value="4">Quarterly</option>
+                            <option value="2">Half-Yearly</option>
+                            <option value="1">Yearly</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="withdrawalRate">Withdrawal Rate (% of Balance per Interval):</label>
+                        <input type="number" id="withdrawalRate" value="0" min="0" max="100" step="any" disabled>
+                    </div>
+                </div>
+                <button type="button" onclick="calculateAndShow()">Calculate & Visualize</button>
+            </form>
+            <div id="results" style="display: none;">
+                <h2>Results (With Withdrawals Applied)</h2>
+                <p><strong>Final Balance:</strong> <span id="finalBalance"></span></p>
+                <p><strong>Total Principal Invested:</strong> <span id="totalPrincipal"></span></p>
+                <p><strong>Total Amount Withdrawn:</strong> <span id="totalWithdrawn"></span></p>
+                <p><strong>Total Interest Earned:</strong> <span id="totalInterest"></span></p>
+                <p><small>Note: Total Interest = Final Balance + Total Withdrawn - Total Principal.</small></p>
+                <p id="comparisonNote" style="display: none; margin-top: 10px; color: #0056b3;">
+                    <small>Balance graph includes comparison showing growth *without* withdrawals.</small>
+                </p>
+            </div>
+        </div>
+
+        <!-- Chart Section 1: Balance -->
+        <div class="chart-section" id="balanceChartSection">
+            <h2>Investment Balance Over Time</h2>
+            <canvas id="compoundChart"></canvas>
+        </div>
+
+        <!-- Chart Section 2: Withdrawals (Initially Hidden) -->
+        <div class="chart-section" id="withdrawalChartSection" style="display: none;">
+            <h2>Cumulative Withdrawals Over Time</h2>
+            <canvas id="withdrawalChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // --- Get Element References ---
+        const initialInvestmentInput = document.getElementById('initialInvestment');
+        const annualRateInput = document.getElementById('annualRate');
+        const yearsInput = document.getElementById('years');
+        const compoundingFrequencyInput = document.getElementById('compoundingFrequency');
+        const contributionIntervalInput = document.getElementById('contributionInterval');
+        const contributionAmountInput = document.getElementById('contributionAmount');
+        const withdrawalIntervalInput = document.getElementById('withdrawalInterval');
+        const withdrawalRateInput = document.getElementById('withdrawalRate');
+        const resultsDiv = document.getElementById('results');
+        const finalBalanceSpan = document.getElementById('finalBalance');
+        const totalPrincipalSpan = document.getElementById('totalPrincipal');
+        const totalWithdrawnSpan = document.getElementById('totalWithdrawn');
+        const totalInterestSpan = document.getElementById('totalInterest');
+        const comparisonNoteP = document.getElementById('comparisonNote');
+        const balanceChartSection = document.getElementById('balanceChartSection');
+        const withdrawalChartSection = document.getElementById('withdrawalChartSection');
+        const ctxBalance = document.getElementById('compoundChart').getContext('2d');
+        const ctxWithdrawal = document.getElementById('withdrawalChart').getContext('2d');
+        let compoundChart = null;
+        let withdrawalChart = null;
+
+        // --- Input Toggling Functions ---
+        function toggleContributionAmount() {
+            const interval = parseInt(contributionIntervalInput.value);
+            contributionAmountInput.disabled = (interval === 0);
+            if (interval === 0) contributionAmountInput.value = 0;
+        }
+        function toggleWithdrawalRate() {
+            const interval = parseInt(withdrawalIntervalInput.value);
+            withdrawalRateInput.disabled = (interval === 0);
+            if (interval === 0) withdrawalRateInput.value = 0; // Reset withdrawal rate if set to None
+        }
+        contributionIntervalInput.addEventListener('change', toggleContributionAmount);
+        withdrawalIntervalInput.addEventListener('change', toggleWithdrawalRate);
+
+        // --- Formatting Functions ---
+        function formatCurrencyPrecise(amount) {
+            if (typeof amount !== 'number' || isNaN(amount)) return '₹ 0.00';
+            return amount.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        function formatIndianCurrencySystem(value) {
+            if (typeof value !== 'number' || isNaN(value)) return '₹ 0';
+            const crore = 10000000;
+            const lakh = 100000;
+            let displayValue;
+            const absValue = Math.abs(value);
+
+            // Simplify display on smaller screens if needed, check width here?
+            // For now, keep the L/Cr formatting consistent
+            if (absValue >= crore) displayValue = (value / crore).toFixed(2) + ' Cr';
+            else if (absValue >= lakh) displayValue = (value / lakh).toFixed(2) + ' L';
+            else displayValue = Math.round(value).toLocaleString('en-IN');
+            return '₹ ' + displayValue;
+        }
+
+         // --- Debounce Function ---
+         function debounce(func, wait) {
+             let timeout;
+             return function executedFunction(...args) {
+                 const later = () => {
+                     clearTimeout(timeout);
+                     func(...args);
+                 };
+                 clearTimeout(timeout);
+                 timeout = setTimeout(later, wait);
+             };
+         }
+
+        // --- Core Calculation Function ---
+        function calculateAndShow() {
+            console.log("Calculating..."); // Add log for debugging resize calls
+            // --- Get Inputs ---
+            const P = parseFloat(initialInvestmentInput.value) || 0;
+            const annualRate = parseFloat(annualRateInput.value) || 0;
+            const t = parseInt(yearsInput.value) || 0;
+            const n = parseInt(compoundingFrequencyInput.value) || 1; // Compounding periods per year
+
+            const contributionFreq = parseInt(contributionIntervalInput.value) || 0; // Contributions per year
+            const C = (contributionFreq > 0) ? parseFloat(contributionAmountInput.value) || 0 : 0; // Amount per contribution
+
+            const withdrawalFreq = parseInt(withdrawalIntervalInput.value) || 0; // Withdrawals per year
+            const W_rate_percent = (withdrawalFreq > 0) ? parseFloat(withdrawalRateInput.value) || 0 : 0;
+
+            // --- Basic Validation ---
+            if (t <= 0 || annualRate < 0 || P < 0 || C < 0 || W_rate_percent < 0 || W_rate_percent > 100) {
+                alert("Please enter valid positive numbers. Withdrawal rate must be between 0 and 100.");
+                resultsDiv.style.display = 'none'; // Hide results on error
+                withdrawalChartSection.style.display = 'none'; // Hide withdrawal chart on error
+                if (compoundChart) { compoundChart.destroy(); compoundChart = null; } // Clear balance chart
+                if (withdrawalChart) { withdrawalChart.destroy(); withdrawalChart = null;} // Clear withdrawal chart
+                return;
+            }
+            const r = annualRate / 100;
+            const ratePerCompoundingPeriod = r / n;
+            const totalPeriods = t * n; // Total number of compounding periods
+            const W_rate_decimal = W_rate_percent / 100;
+            const showWithdrawalFeatures = (withdrawalFreq > 0 && W_rate_decimal > 0); // Flag for withdrawal activity
+
+            // --- Arrays for Chart Data ---
+            let yearlyLabels = ['Year 0'];
+            let yearlyDataWithWithdrawals = [P]; // Actual balance
+            let yearlyDataWithoutWithdrawals = [P]; // Hypothetical balance without withdrawals
+            let yearlyWithdrawalsData = [0]; // Cumulative withdrawal amount
+
+            // --- Calculation 1: Scenario WITHOUT Withdrawals (FV formulas) ---
+            // Using Array(t+1) for direct index access [0..t]
+            yearlyDataWithoutWithdrawals = new Array(t + 1);
+            yearlyDataWithoutWithdrawals[0] = P;
+             for (let year = 1; year <= t; year++) {
+                const periodsElapsed = year * n;
+                let fvP_no_W = P * Math.pow(1 + ratePerCompoundingPeriod, periodsElapsed);
+                let fvC_no_W = 0;
+                if (C > 0 && contributionFreq > 0) {
+                    const effectiveContributionPerCompoundingPeriod = C * contributionFreq / n;
+                    if (ratePerCompoundingPeriod > 0) {
+                        fvC_no_W = effectiveContributionPerCompoundingPeriod * ( (Math.pow(1 + ratePerCompoundingPeriod, periodsElapsed) - 1) / ratePerCompoundingPeriod );
+                    } else {
+                        fvC_no_W = effectiveContributionPerCompoundingPeriod * periodsElapsed;
+                    }
+                }
+                yearlyDataWithoutWithdrawals[year] = fvP_no_W + fvC_no_W; // Store at year index
+            }
+
+            // --- Calculation 2: Scenario WITH Withdrawals/Contributions (Period-by-Period Simulation) ---
+            // Using Array(t+1) for direct index access [0..t]
+            yearlyDataWithWithdrawals = new Array(t + 1);
+            yearlyWithdrawalsData = new Array(t+1);
+            yearlyDataWithWithdrawals[0] = P;
+            yearlyWithdrawalsData[0] = 0;
+
+            let currentBalance = P;
+            let totalWithdrawnAcc = 0;
+
+            for (let period = 1; period <= totalPeriods; period++) {
+                let balanceAtPeriodStart = currentBalance;
+                let contributionThisPeriod = 0;
+                let withdrawalThisPeriod = 0;
+
+                // Determine Contribution
+                if (C > 0 && contributionFreq > 0) {
+                    const periodsPerContribution = n / contributionFreq;
+                    if (period > 0 && period % periodsPerContribution === 0) {
+                        contributionThisPeriod = C;
+                    }
+                }
+                // Determine Withdrawal
+                if (showWithdrawalFeatures && withdrawalFreq > 0) {
+                    const periodsPerWithdrawal = n / withdrawalFreq;
+                    if (period > 0 && period % periodsPerWithdrawal === 0 && balanceAtPeriodStart > 0) {
+                        let potentialWithdrawal = balanceAtPeriodStart * W_rate_decimal;
+                        withdrawalThisPeriod = Math.max(0, Math.min(potentialWithdrawal, balanceAtPeriodStart));
+                    }
+                }
+                // Balance before Interest
+                let balanceBeforeInterest = balanceAtPeriodStart + contributionThisPeriod - withdrawalThisPeriod;
+                balanceBeforeInterest = Math.max(0, balanceBeforeInterest);
+                // Accumulate Withdrawals
+                totalWithdrawnAcc += withdrawalThisPeriod;
+                // Interest
+                const interestThisPeriod = balanceBeforeInterest * ratePerCompoundingPeriod;
+                // End Balance for Period
+                currentBalance = balanceBeforeInterest + interestThisPeriod;
+                currentBalance = Math.max(0, currentBalance);
+
+                // Store Year-End Data
+                if (period % n === 0) {
+                    const currentYear = period / n;
+                    yearlyDataWithWithdrawals[currentYear] = currentBalance;
+                    yearlyWithdrawalsData[currentYear] = totalWithdrawnAcc;
+                }
+            } // End simulation loop
+
+            // --- Final Results ---
+            const finalValue_with_W = yearlyDataWithWithdrawals[t];
+            const finalTotalPrincipal = P + (C * contributionFreq * t);
+            const finalTotalWithdrawn = yearlyWithdrawalsData[t];
+            const totalInterest = finalValue_with_W + finalTotalWithdrawn - finalTotalPrincipal;
+
+            // --- Display Results ---
+            finalBalanceSpan.textContent = formatCurrencyPrecise(finalValue_with_W);
+            totalPrincipalSpan.textContent = formatCurrencyPrecise(finalTotalPrincipal);
+            totalWithdrawnSpan.textContent = formatCurrencyPrecise(finalTotalWithdrawn);
+            totalInterestSpan.textContent = formatCurrencyPrecise(totalInterest >= 0 ? totalInterest : 0); // Allow zero interest
+            resultsDiv.style.display = 'block';
+            comparisonNoteP.style.display = showWithdrawalFeatures ? 'block' : 'none';
+            withdrawalChartSection.style.display = showWithdrawalFeatures ? 'block' : 'none';
+
+            // --- Update Charts ---
+            const chartLabels = Array.from({ length: t + 1 }, (_, i) => `Year ${i}`);
+            const chartDataWith = yearlyDataWithWithdrawals.slice(0, t + 1);
+            const chartDataWithout = yearlyDataWithoutWithdrawals.slice(0, t + 1);
+            const chartWithdrawals = yearlyWithdrawalsData.slice(0, t + 1);
+
+            // Check if arrays are valid before updating chart
+            if (chartLabels && chartDataWith && chartDataWithout && chartWithdrawals) {
+                updateBalanceChart(chartLabels, chartDataWith, chartDataWithout, showWithdrawalFeatures);
+                if (showWithdrawalFeatures) {
+                    updateWithdrawalChart(chartLabels, chartWithdrawals);
+                }
+            } else {
+                console.error("Chart data generation failed.");
+                 if (compoundChart) { compoundChart.destroy(); compoundChart = null; }
+                 if (withdrawalChart) { withdrawalChart.destroy(); withdrawalChart = null;}
+            }
+        }
+
+
+        // --- Balance Chart Update Function ---
+        function updateBalanceChart(labels, dataWithWithdrawals, dataWithoutWithdrawals, includeComparison) {
+            if (compoundChart) {
+                compoundChart.destroy();
+                compoundChart = null; // Ensure old instance is cleared
+            }
+
+            // Responsive Options
+            const isMobile = window.innerWidth < 600;
+            const legendPosition = isMobile ? 'bottom' : 'top';
+            const titleFontSize = isMobile ? 14 : 16;
+            const tickFontSize = isMobile ? 9 : Chart.defaults.font.size; // Adjust tick font size
+
+            const datasets = [ /* Datasets definitions remain the same */
+                 // Bar: Actual Balance (With Withdrawals) - Blue
+                {
+                    type: 'bar', label: 'Balance (With Withdrawals)', data: dataWithWithdrawals,
+                    backgroundColor: 'rgba(0, 123, 255, 0.6)', borderColor: 'rgba(0, 123, 255, 1)',
+                    borderWidth: 1, order: 3
+                },
+                // Line: Trend (With Withdrawals) - Red
+                {
+                    type: 'line', label: 'Trend (With Withdrawals)', data: dataWithWithdrawals,
+                    borderColor: 'rgba(220, 53, 69, 1)', backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                    tension: 0.1, fill: false, pointRadius: isMobile ? 2 : 3, // Smaller points on mobile
+                    order: 2
+                }
+            ];
+
+            if (includeComparison) {
+                // Bar: Hypothetical Balance (No Withdrawals) - Green
+                datasets.push({
+                    type: 'bar', label: 'Balance (No Withdrawals)', data: dataWithoutWithdrawals,
+                    backgroundColor: 'rgba(25, 135, 84, 0.6)', borderColor: 'rgba(25, 135, 84, 1)',
+                    borderWidth: 1, order: 3
+                });
+                // Line: Trend (No Withdrawals) - Dashed Green
+                datasets.push({
+                    type: 'line', label: 'Trend (No Withdrawals)', data: dataWithoutWithdrawals,
+                    borderColor: 'rgba(25, 135, 84, 1)', backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                    tension: 0.1, fill: false, pointRadius: isMobile ? 2 : 3, borderDash: [5, 5],
+                    order: 1
+                });
+            }
+
+            try {
+                compoundChart = new Chart(ctxBalance, {
+                    // Type defined per dataset
+                    data: { labels: labels, datasets: datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false, // VERY IMPORTANT for vertical resizing
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: { callback: formatIndianCurrencySystem, font: { size: tickFontSize } },
+                                title: { display: true, text: 'Balance (₹)' }
+                            },
+                            x: {
+                                ticks: { font: { size: tickFontSize }, autoSkip: true, maxTicksLimit: isMobile ? 6 : 10 }, // Skip labels on mobile if needed
+                                title: { display: true, text: 'Year' }
+                            }
+                        },
+                        plugins: {
+                            tooltip: {
+                                callbacks: { label: context => { /* Tooltip callback remains same */
+                                    let label = context.dataset.label || '';
+                                    if (label) label += ': ';
+                                    if (context.parsed.y !== null) label += formatIndianCurrencySystem(context.parsed.y);
+                                    return label;
+                                }}
+                            },
+                            legend: {
+                                display: true,
+                                position: legendPosition // Dynamic position
+                            },
+                            title: {
+                                display: true,
+                                text: 'Yearly Investment Balance Comparison (₹)',
+                                padding: { bottom: 15 },
+                                font: { size: titleFontSize } // Dynamic font size
+                            }
+                        },
+                        interaction: { mode: 'index', intersect: false }
+                    }
+                });
+            } catch (error) {
+                 console.error("Error creating balance chart:", error);
+            }
+        }
+
+        // --- Withdrawal Chart Update Function ---
+        function updateWithdrawalChart(labels, withdrawalData) {
+            if (withdrawalChart) {
+                withdrawalChart.destroy();
+                withdrawalChart = null; // Ensure old instance is cleared
+            }
+
+             // Responsive Options
+            const isMobile = window.innerWidth < 600;
+            const legendPosition = isMobile ? 'bottom' : 'top';
+            const titleFontSize = isMobile ? 14 : 16;
+             const tickFontSize = isMobile ? 9 : Chart.defaults.font.size; // Adjust tick font size
+
+            try {
+                 withdrawalChart = new Chart(ctxWithdrawal, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Cumulative Amount Withdrawn', data: withdrawalData,
+                            borderColor: 'rgba(255, 159, 64, 1)', backgroundColor: 'rgba(255, 159, 64, 0.2)',
+                            tension: 0.1, fill: true, pointRadius: isMobile ? 2 : 3, pointHoverRadius: 5
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false, // VERY IMPORTANT
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: { callback: formatIndianCurrencySystem, font: { size: tickFontSize } },
+                                title: { display: true, text: 'Total Amount Withdrawn (₹)' } },
+                            x: {
+                                ticks: { font: { size: tickFontSize }, autoSkip: true, maxTicksLimit: isMobile ? 6 : 10 },
+                                title: { display: true, text: 'Year' }
+                            }
+                        },
+                        plugins: {
+                            tooltip: {
+                                callbacks: { label: context => { /* Tooltip callback remains same */
+                                    let label = context.dataset.label || '';
+                                    if (label) label += ': ';
+                                    if (context.parsed.y !== null) label += formatIndianCurrencySystem(context.parsed.y);
+                                    return label;
+                                }}
+                            },
+                            legend: {
+                                display: true,
+                                position: legendPosition // Dynamic position
+                            },
+                            title: {
+                                display: true,
+                                text: 'Cumulative Withdrawals Over Time (₹)',
+                                padding: { bottom: 15 },
+                                font: { size: titleFontSize } // Dynamic font size
+                            }
+                        },
+                        interaction: { mode: 'index', intersect: false }
+                    }
+                });
+            } catch (error) {
+                 console.error("Error creating withdrawal chart:", error);
+            }
+        }
+
+
+        // --- Initial Calculation & Resize Handling ---
+        document.addEventListener('DOMContentLoaded', function() {
+             toggleContributionAmount(); // Ensure correct initial state based on dropdown
+             toggleWithdrawalRate();   // Ensure correct initial state based on dropdown
+             calculateAndShow();       // Run calculation with defaults
+
+             // Add debounced resize listener
+             window.addEventListener('resize', debounce(calculateAndShow, 250)); // 250ms delay
+         });
+
+    </script>
+</body>
+
+</html>

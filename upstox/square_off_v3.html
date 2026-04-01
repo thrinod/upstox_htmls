@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Square Off All Positions (v2) with Index Watch</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; max-width: 850px; margin: auto; font-size: 14px; }
+        label { display: block; margin-top: 12px; font-weight: bold; }
+        input[type="number"], input[type="text"], select { padding: 8px; margin-top: 5px; border: 1px solid #ccc; margin-right: 5px; width: calc(100% - 20px); max-width: 250px; box-sizing: border-box;}
+        input[type="checkbox"] { transform: scale(1.2); vertical-align: middle; margin-right: 5px; }
+        button { padding: 12px 20px; margin-top: 15px; cursor: pointer; border: none; border-radius: 4px; color: white; font-size: 1.1em;}
+        .btn-square-off { background-color: #dc3545; } .btn-square-off:hover { background-color: #c82333; }
+        .btn-start-watch { background-color: #007bff; } .btn-start-watch:hover { background-color: #0056b3; }
+        .btn-stop-watch { background-color: #ffc107; color: #212529; } .btn-stop-watch:hover { background-color: #e0a800; }
+        button:disabled { background-color: #aaa; cursor: not-allowed; opacity: 0.7;}
+        .log-area { margin-top: 15px; padding: 10px; border: 1px solid #eee; background-color: #f8f9fa; min-height: 150px; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; max-height: 400px; overflow-y: auto;}
+        .error { color: #dc3545; font-weight: bold; } .success { color: #28a745; font-weight: bold; } .info { color: #17a2b8; } .warning { color: #ffc107; font-weight: bold;}
+        .nav-back { margin-bottom: 20px; }
+        .token-status { margin-bottom: 15px; font-weight: bold;}
+        .config-section, .nifty-watch-section { margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;}
+        .confirm-box { margin-top: 20px; padding: 10px; background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 4px;}
+        .confirm-box label { display: inline; font-weight: bold; color: #856404;}
+        hr { margin: 30px 0; }
+        .nifty-status { margin-top:10px; padding: 8px; background-color: #e9ecef; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>Square Off ALL Positions (v2 API) with Index Watch</h1>
+    <p class="warning"><strong>HIGH RISK ACTION!</strong> This attempts to cancel all open orders AND place new LIMIT orders to close all net positions. This can be triggered manually or automatically when the selected Index reaches a target.</p>
+    <p class="warning">Relies on potentially delayed LTP. Execution is not guaranteed. Verify v2 endpoints/parameters and **ensure correct Instrument Keys for indices**.</p>
+    <hr>
+    <div class="nav-back">
+        <a href="index.html">« Back to Main Menu</a> |
+        <a href="auth_v2.html">Go to Authentication </a>
+    </div>
+    <div class="token-status">Access Token Status: <span id="tokenLoadedStatus" class="error">Checking...</span></div>
+
+    <!-- General Configuration -->
+    <div class="config-section">
+        <h3>General Configuration</h3>
+        <label for="priceOffset">Price Offset for Square-Off Orders (Absolute Value):</label>
+        <input type="number" id="priceOffset" value="0.50" step="0.05" min="0">
+        <small>Offset from LTP used for LIMIT orders. SELL orders placed at `LTP - Offset`, BUY orders placed at `LTP + Offset` to improve fill chance for closing positions.</small>
+    </div>
+
+    <!-- Index Target Monitoring -->
+    <div class="nifty-watch-section">
+        <h3>Index Target Watch & Auto Square-Off</h3>
+        <p>This feature will monitor the selected index and automatically trigger the full square-off process if the target price is met.</p>
+        
+        <label for="niftyInstrumentKey">Select Index to Monitor:</label>
+        <select id="niftyInstrumentKey">
+            <option value="NSE_INDEX|Nifty 50">NIFTY 50</option>
+            <option value="BSE_INDEX|SENSEX">SENSEX</option>
+            <option value="NSE_INDEX|Nifty Bank">NIFTY BANK</option>
+            <!-- Add other instrument keys here if needed, e.g., for specific stocks -->
+            <!-- <option value="NSE_EQ|INE002A01018">RELIANCE</option> -->
+        </select>
+
+
+        <label for="niftyTargetPrice">Target Price for Selected Index:</label>
+        <input type="number" id="niftyTargetPrice" step="0.01" value="22000">
+
+        <label for="niftyTargetDirection">Trigger Condition:</label>
+        <select id="niftyTargetDirection">
+            <option value="above">Square off if Index Price >= Target</option>
+            <option value="below">Square off if Index Price <= Target</option>
+        </select>
+
+        <div class="nifty-status">
+            Index Watch Status: <span id="niftyWatchStatus" class="info">Idle</span><br>
+            Current Index Price: <span id="currentNiftyPrice">N/A</span>
+        </div>
+
+        <button id="startNiftyWatchBtn" class="btn-start-watch">Start Index Watch & Auto Square-Off</button>
+        <button id="stopNiftyWatchBtn" class="btn-stop-watch" disabled>Stop Index Watch</button>
+    </div>
+    <hr>
+
+    <!-- Manual Square Off -->
+    <h3>Manual Square Off</h3>
+    <div class="confirm-box">
+        <input type="checkbox" id="confirmSquareOff" checked>
+        <label for="confirmSquareOff">I understand the risks and want to enable square-off actions (manual or Index-triggered).</label>
+    </div>
+    <button id="squareOffBtn" class="btn-square-off">Square Off ALL Positions NOW (Manual)</button>
+
+    <!-- Log Area -->
+    <div class="log-area" id="squareOffLog">Action logs will appear here...</div>
+
+
+    <script>
+        // --- Config & Elements ---
+        const UPSTOX_API_BASE_URL = "https://api.upstox.com";
+        const API_VERSION = "2.0";
+        const LOCAL_STORAGE_TOKEN_KEY = 'upstoxAccessToken';
+        const NIFTY_POLL_INTERVAL_MS = 5000; // 5 seconds, adjust carefully for API rate limits
+
+        const tokenLoadedStatus = document.getElementById('tokenLoadedStatus');
+        const priceOffsetInput = document.getElementById('priceOffset');
+        const confirmCheckbox = document.getElementById('confirmSquareOff');
+        const squareOffBtn = document.getElementById('squareOffBtn');
+        const squareOffLogDiv = document.getElementById('squareOffLog');
+
+        // Index Watch Elements
+        const niftyInstrumentKeyInput = document.getElementById('niftyInstrumentKey'); // Now a select element
+        const niftyTargetPriceInput = document.getElementById('niftyTargetPrice');
+        const niftyTargetDirectionSelect = document.getElementById('niftyTargetDirection');
+        const startNiftyWatchBtn = document.getElementById('startNiftyWatchBtn');
+        const stopNiftyWatchBtn = document.getElementById('stopNiftyWatchBtn');
+        const niftyWatchStatusSpan = document.getElementById('niftyWatchStatus');
+        const currentNiftyPriceSpan = document.getElementById('currentNiftyPrice');
+
+        let loadedAccessToken = null;
+        let isMonitoringNifty = false;
+        let niftyMonitoringIntervalId = null;
+
+        // --- Helper Functions ---
+        function logTo(divElement, message, type = 'info') {
+            const entry = document.createElement('div'); entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`; entry.className = type; divElement.appendChild(entry); divElement.scrollTop = divElement.scrollHeight;
+        }
+        function getHeaders(token) {
+            return { 'Accept': 'application/json', 'Api-Version': API_VERSION, 'Authorization': `Bearer ${token}` };
+        }
+        function formatNum(num, dec = 2) { return typeof num === 'number' ? num.toFixed(dec) : 'N/A'; }
+        function roundPrice(price) { return Math.round(price * 100) / 100; }
+
+        // --- Load Token & Enable/Disable Button ---
+        function loadTokenFromStorage() {
+            confirmCheckbox.disabled = false; 
+            loadedAccessToken = localStorage.getItem(LOCAL_STORAGE_TOKEN_KEY);
+            if (loadedAccessToken) {
+                tokenLoadedStatus.textContent = 'Loaded'; tokenLoadedStatus.className = 'success';
+            } else {
+                tokenLoadedStatus.textContent = 'Not Found. Authenticate first.'; tokenLoadedStatus.className = 'error';
+                confirmCheckbox.disabled = false; // Can't confirm if no token
+            }
+            updateButtonStates(); // Update all buttons based on token and checkbox
+        }
+
+        function updateButtonStates() {
+            const tokenAvailable = !!loadedAccessToken;
+            const confirmed = confirmCheckbox.checked;
+
+            squareOffBtn.disabled = !(tokenAvailable && confirmed && !isMonitoringNifty); // Disable manual if monitoring
+            startNiftyWatchBtn.disabled = !(tokenAvailable && confirmed) || isMonitoringNifty;
+            stopNiftyWatchBtn.disabled = !isMonitoringNifty;
+
+            // Disable Index Watch inputs if monitoring or no token/confirmation
+            const allowNiftyConfig = tokenAvailable && confirmed && !isMonitoringNifty;
+            niftyInstrumentKeyInput.disabled = !allowNiftyConfig;
+            niftyTargetPriceInput.disabled = !allowNiftyConfig;
+            niftyTargetDirectionSelect.disabled = !allowNiftyConfig;
+            confirmCheckbox.disabled = false;
+        }
+        confirmCheckbox.addEventListener('change', updateButtonStates);
+
+        // --- Core Square Off Procedure (Called by Manual Button or Index Watch) ---
+        async function performFullSquareOffProcedure(currentAccessToken, priceOffsetValue, logDiv) {
+            logTo(logDiv, '--- INITIATING FULL SQUARE OFF PROCEDURE ---', 'info');
+            // Temporarily disable relevant buttons during the process
+            squareOffBtn.disabled = true;
+            startNiftyWatchBtn.disabled = true; 
+            stopNiftyWatchBtn.disabled = true; 
+
+            try {
+                // Step 1: Cancel existing orders
+                logTo(logDiv, "Step 1: Attempting to cancel all open orders...");
+                const ordersCancelledSuccessfully = await cancelAllOpenOrdersV2(currentAccessToken, logDiv);
+                if (!ordersCancelledSuccessfully) {
+                    logTo(logDiv, "--> Halting process due to issues cancelling open orders. Some orders might still be open.", 'error');
+                    logTo(logDiv, "Proceeding to fetch positions despite cancellation issues. Check manually.", 'warning');
+                }
+                logTo(logDiv, "------------------------------------", 'info');
+
+                // Step 2: Fetch positions
+                logTo(logDiv, "Step 2: Fetching current positions...");
+                const netPositions = await fetchPositionsV2(currentAccessToken, logDiv, "/v2/portfolio/short-term-positions"); 
+                
+                if (netPositions === null) { 
+                    logTo(logDiv, "--> Halting process: Could not fetch positions.", 'error');
+                    return false; 
+                }
+                if (netPositions.length === 0) {
+                    logTo(logDiv, "--> No net positions found to square off.", 'success');
+                    return true; 
+                }
+                logTo(logDiv, "------------------------------------", 'info');
+
+                // Step 3: Place square-off orders
+                logTo(logDiv, `Step 3: Attempting to place square-off orders for ${netPositions.length} positions...`);
+                const placementPromises = netPositions.map(pos => placeSquareOffOrderV2(currentAccessToken, pos, priceOffsetValue, logDiv));
+                const results = await Promise.allSettled(placementPromises);
+
+                let successCount = 0;
+                let failureCount = 0;
+                results.forEach((result) => {
+                    if (result.status === 'fulfilled' && result.value.success) {
+                        successCount++;
+                    } else {
+                        failureCount++;
+                    }
+                });
+
+                logTo(logDiv, "------------------------------------", 'info');
+                logTo(logDiv, "--- Square Off Attempt Summary ---", 'info');
+                logTo(logDiv, `Successfully placed orders: ${successCount}`, 'success');
+                logTo(logDiv, `Failed/Skipped attempts: ${failureCount}`, failureCount > 0 ? 'error' : 'info');
+                logTo(logDiv, "NOTE: Check actual order status in your terminal/app. Limit orders may not execute.", 'warning');
+                return failureCount === 0; 
+
+            } catch (error) {
+                logTo(logDiv, `--- UNEXPECTED ERROR in square off procedure: ${error.message} ---`, 'error');
+                console.error("Square Off Procedure Error:", error);
+                return false; 
+            } finally {
+                logTo(logDiv, '--- Full Square Off Procedure Attempt Finished ---', 'info');
+                updateButtonStates();
+            }
+        }
+
+
+        // --- Step 1: Cancel All Open Orders ---
+        const V2_CANCEL_OPEN_STATUSES = [ "open", "trigger pending", "after market order req received" ];
+        async function cancelSingleOrderV2(token, orderId, logDiv) {
+             const url = `${UPSTOX_API_BASE_URL}/v2/order/cancel?order_id=${encodeURIComponent(orderId)}`;
+             logTo(logDiv, `  Attempting cancel: ${orderId}...`);
+             try {
+                 const response = await fetch(url, { method: 'DELETE', headers: getHeaders(token), mode: 'cors' });
+                 const data = await response.json().catch(() => ({ status: 'error', message: 'Failed parse JSON'}));
+                 if (response.ok && data.status === 'success') {
+                     logTo(logDiv, `  ✅ SUCCESS cancel: ${data?.data?.order_id || orderId}`, 'success'); return true;
+                 } else {
+                     logTo(logDiv, `  ❌ FAILED cancel: ${orderId}. ${data?.message || `HTTP ${response.status}`}`, 'error'); return false;
+                 }
+             } catch (error) { logTo(logDiv, `  ❌ NETWORK ERROR cancel: ${orderId}. ${error.message}`, 'error'); return false;}
+         }
+
+        async function cancelAllOpenOrdersV2(token, logDiv) {
+            let allCancelledOrNoneExist = true;
+            const url = `${UPSTOX_API_BASE_URL}/v2/order/retrieve-all`;
+            try {
+                 const response = await fetch(url, { method: 'GET', headers: getHeaders(token), mode: 'cors' });
+                 const data = await response.json().catch(() => null);
+                 if (!response.ok || !data || data.status !== 'success') {
+                     throw new Error(data?.message || `HTTP ${response.status}: Failed to fetch orders for cancellation`);
+                 }
+                 const allOrders = data.data || [];
+                 const openOrders = allOrders.filter(o => o.status && V2_CANCEL_OPEN_STATUSES.includes(o.status.toLowerCase()) && o.order_id);
+
+                 if (openOrders.length === 0) {
+                     logTo(logDiv, " -> No open orders found to cancel.", 'success');
+                     return true;
+                 }
+
+                 logTo(logDiv, ` -> Found ${openOrders.length} open orders. Attempting cancellation...`);
+                 const promises = openOrders.map(o => cancelSingleOrderV2(token, o.order_id, logDiv));
+                 const results = await Promise.allSettled(promises);
+                 let successCount = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
+                 if (successCount < openOrders.length) {
+                     allCancelledOrNoneExist = false;
+                     logTo(logDiv, ` -> WARNING: Failed to cancel ${openOrders.length - successCount} out of ${openOrders.length} orders.`, 'warning');
+                 } else {
+                     logTo(logDiv, ` -> Successfully cancelled all ${successCount} open orders.`, 'success');
+                 }
+                 return allCancelledOrNoneExist;
+
+            } catch (error) {
+                 logTo(logDiv, ` -> CRITICAL ERROR fetching/cancelling orders: ${error.message}`, 'error');
+                 logTo(logDiv, ' -> Cannot reliably determine if all orders cancelled.', 'error');
+                 return false; // Critical failure
+            }
+        }
+
+        // --- Step 2: Fetch Positions ---
+         async function fetchPositionsV2(token, logDiv, positionsEndpoint = "/v2/portfolio/short-term-positions") {
+             const url = `${UPSTOX_API_BASE_URL}${positionsEndpoint}`;
+             try {
+                 const response = await fetch(url, { method: 'GET', headers: getHeaders(token), mode: 'cors' });
+                 const data = await response.json().catch(() => null);
+                 if (!response.ok || !data || data.status !== 'success') {
+                      throw new Error(data?.message || `HTTP ${response.status}: Failed fetch positions from ${positionsEndpoint}`);
+                 }
+                 const positions = data.data || [];
+                 const netPositions = positions.filter(p => p.quantity !== 0 && p.quantity !== null && typeof p.quantity !== 'undefined'); 
+                 logTo(logDiv, ` -> Fetched ${netPositions.length} net positions from ${positionsEndpoint}.`, netPositions.length > 0 ? 'success' : 'info');
+                 return netPositions;
+             } catch (error) {
+                 logTo(logDiv, ` -> ERROR fetching positions from ${positionsEndpoint}: ${error.message}`, 'error');
+                 return null;
+             }
+         }
+
+        // --- Step 3: Place Square Off Order ---
+         async function placeSquareOffOrderV2(token, position, offset, logDiv) {
+             const qty = Math.abs(position.quantity || 0);
+             const ltp = position.last_price;
+             const transactionType = position.quantity > 0 ? "SELL" : "BUY";
+             const instrumentKey = position.instrument_token; 
+             const productType = position.product;
+
+             if (qty === 0) return { success: true, message: `Skipped ${position.trading_symbol}: Zero quantity.`}; 
+             if (typeof ltp !== 'number' || ltp <= 0) {
+                 logTo(logDiv, `  ⚠️ Skipping ${position.trading_symbol || instrumentKey}: Missing or invalid LTP (${ltp}) in position data. Cannot calculate limit price.`, 'warning');
+                 return { success: false, message: `Skipped ${position.trading_symbol || instrumentKey}: Invalid LTP.`};
+             }
+             if (!instrumentKey) {
+                 logTo(logDiv, `  ⚠️ Skipping position (symbol: ${position.trading_symbol || 'Unknown'}): Missing instrument token.`, 'warning');
+                 return { success: false, message: `Skipped: Missing instrument token.`};
+             }
+             if (!productType) {
+                 logTo(logDiv, `  ⚠️ Skipping ${position.trading_symbol || instrumentKey}: Missing product type.`, 'warning');
+                  return { success: false, message: `Skipped ${position.trading_symbol || instrumentKey}: Missing product.`};
+             }
+
+             const absOffset = Math.abs(offset);
+             let limitPrice = (transactionType === "SELL") ? roundPrice(ltp - absOffset) : roundPrice(ltp + absOffset);
+
+             if (limitPrice <= 0) {
+                 logTo(logDiv, `  ⚠️ Skipping ${position.trading_symbol || instrumentKey}: Calculated LIMIT price ${limitPrice} is not positive. Check LTP (${ltp}) and offset (${offset}).`, 'warning');
+                 return { success: false, message: `Skipped ${position.trading_symbol || instrumentKey}: Calculated price <= 0.`};
+             }
+
+             const url = `${UPSTOX_API_BASE_URL}/v2/order/place`;
+             logTo(logDiv, `  Attempting ${transactionType} ${qty} of ${position.trading_symbol || instrumentKey} (${productType}) @ LIMIT ${limitPrice}...`);
+             const headers = { ...getHeaders(token), 'Content-Type': 'application/json' };
+             const body = JSON.stringify({
+                 instrument_token: instrumentKey, quantity: qty, order_type: "LIMIT",
+                 product: productType, transaction_type: transactionType, price: limitPrice,
+                 trigger_price: 0, disclosed_quantity: 0, validity: "DAY"
+             });
+
+             try {
+                 const response = await fetch(url, { method: 'POST', headers: headers, body: body, mode: 'cors' });
+                 const data = await response.json().catch(() => ({ status: 'error', message: 'Failed parse JSON'}));
+                 if (response.ok && data.status === 'success') {
+                     logTo(logDiv, `  ✅ SUCCESS placing ${transactionType} order for ${position.trading_symbol || instrumentKey}. Order ID: ${data?.data?.order_id || 'N/A'}`, 'success');
+                     return { success: true, orderId: data?.data?.order_id };
+                 } else {
+                     logTo(logDiv, `  ❌ FAILED placing ${transactionType} order for ${position.trading_symbol || instrumentKey}. ${data?.message || `HTTP ${response.status}`}`, 'error');
+                     return { success: false, message: `Failed placing order: ${data?.message || `HTTP ${response.status}`}` };
+                 }
+             } catch (error) {
+                 logTo(logDiv, `  ❌ NETWORK ERROR placing ${transactionType} order for ${position.trading_symbol || instrumentKey}. ${error.message}`, 'error');
+                 return { success: false, message: `Network error placing order: ${error.message}` };
+             }
+         }
+
+        // --- Manual Square Off Button Handler ---
+        squareOffBtn.addEventListener('click', async () => {
+             if (!loadedAccessToken || !confirmCheckbox.checked) {
+                 logTo(squareOffLogDiv, 'Error: Must have token and confirm checkbox checked for manual square-off.', 'error');
+                 return;
+             }
+             if (isMonitoringNifty) {
+                 logTo(squareOffLogDiv, 'Error: Index Watch is active. Stop it before manual square-off.', 'warning');
+                 return;
+             }
+
+             const offsetValue = parseFloat(priceOffsetInput.value);
+             if (isNaN(offsetValue) || offsetValue < 0) {
+                  logTo(squareOffLogDiv, 'Error: Invalid Price Offset value. Must be zero or positive.', 'error');
+                  return;
+             }
+
+             squareOffLogDiv.innerHTML = ''; 
+             logTo(squareOffLogDiv, '--- MANUAL SQUARE OFF REQUESTED ---', 'info');
+             await performFullSquareOffProcedure(loadedAccessToken, offsetValue, squareOffLogDiv);
+        });
+
+        // --- Index Watch Functions ---
+        async function fetchInstrumentLTPV2(token, instrumentKey) {
+            const url = `${UPSTOX_API_BASE_URL}/v2/market-quote/ltp?instrument_key=${encodeURIComponent(instrumentKey)}`;
+            try {
+                const response = await fetch(url, { method: 'GET', headers: getHeaders(token), mode: 'cors' });
+                const data = await response.json().catch(() => null);
+                // Upstox API response uses instrument_key with ':' instead of '|' in the data object key
+                const instrumentKeyInResponse = instrumentKey.replace("|", ":"); 
+
+                if (!response.ok) { // Check for non-2xx HTTP status codes first
+                     let errorMsg = `HTTP ${response.status}: Failed to fetch LTP for ${instrumentKey}`;
+                     if (data && data.errors && data.errors.length > 0 && data.errors[0].message) {
+                         errorMsg = data.errors[0].message;
+                     } else if (data && data.message) {
+                         errorMsg = data.message;
+                     }
+                     throw new Error(errorMsg);
+                }
+                // Then check for Upstox specific success status and data presence
+                if (!data || data.status !== 'success' || !data.data || !data.data[instrumentKeyInResponse]) {
+                    throw new Error(`Failed to retrieve LTP data for ${instrumentKey} from response. Status: ${data?.status}`);
+                }
+                return data.data[instrumentKeyInResponse].last_price;
+            } catch (error) {
+                const timestamp = new Date().toLocaleTimeString();
+                currentNiftyPriceSpan.textContent = `Error: ${error.message} [${timestamp}]`;
+                currentNiftyPriceSpan.className = 'error';
+                console.error(`Error fetching LTP for ${instrumentKey}:`, error);
+                return null;
+            }
+        }
+
+        async function monitorNiftyPrice() {
+            if (!isMonitoringNifty || !loadedAccessToken) {
+                stopNiftyWatch(); 
+                return;
+            }
+             if (!confirmCheckbox.checked) {
+                logTo(squareOffLogDiv, "Index Watch: Risk confirmation unchecked. Stopping monitoring.", 'warning');
+                stopNiftyWatch();
+                return;
+            }
+
+            const instrumentKey = niftyInstrumentKeyInput.value; // Value from select dropdown
+            const targetPrice = parseFloat(niftyTargetPriceInput.value);
+            const direction = niftyTargetDirectionSelect.value;
+            const selectedInstrumentText = niftyInstrumentKeyInput.options[niftyInstrumentKeyInput.selectedIndex].text;
+
+
+            const currentPrice = await fetchInstrumentLTPV2(loadedAccessToken, instrumentKey);
+
+            if (currentPrice === null) { // Error already handled and displayed by fetchInstrumentLTPV2
+                return; 
+            }
+            
+            const timestamp = new Date().toLocaleTimeString();
+            currentNiftyPriceSpan.textContent = `${selectedInstrumentText}: ${formatNum(currentPrice)} (Target: ${formatNum(targetPrice)} ${direction === 'above' ? '>=' : '<='}) [${timestamp}]`;
+            currentNiftyPriceSpan.className = 'info';
+
+            let targetMet = false;
+            if (direction === 'above' && currentPrice >= targetPrice) {
+                targetMet = true;
+            } else if (direction === 'below' && currentPrice <= targetPrice) {
+                targetMet = true;
+            }
+
+            if (targetMet) {
+                logTo(squareOffLogDiv, `🎯 INDEX TARGET MET! ${selectedInstrumentText} Current: ${formatNum(currentPrice)} (at ${timestamp}), Target: ${direction} ${formatNum(targetPrice)}. Instrument Key: ${instrumentKey}`, 'success');
+                niftyWatchStatusSpan.textContent = `Target Met! (${selectedInstrumentText} at ${formatNum(currentPrice)}) Initiating Square Off...`;
+                niftyWatchStatusSpan.className = 'success';
+                stopNiftyWatch(); 
+
+                const offsetValue = parseFloat(priceOffsetInput.value);
+                if (isNaN(offsetValue) || offsetValue < 0) {
+                    logTo(squareOffLogDiv, 'Error: Invalid Price Offset for Index-triggered square-off. Using 0.', 'error');
+                    await performFullSquareOffProcedure(loadedAccessToken, 0, squareOffLogDiv);
+                } else {
+                    await performFullSquareOffProcedure(loadedAccessToken, offsetValue, squareOffLogDiv);
+                }
+            }
+        }
+
+        function startNiftyWatch() {
+            if (!loadedAccessToken) {
+                logTo(squareOffLogDiv, "Cannot start Index watch: Access token not loaded.", 'error');
+                return;
+            }
+            if (!confirmCheckbox.checked) {
+                logTo(squareOffLogDiv, "Cannot start Index watch: Risk confirmation checkbox must be checked.", 'error');
+                return;
+            }
+            const instrumentKey = niftyInstrumentKeyInput.value;
+            const selectedInstrumentText = niftyInstrumentKeyInput.options[niftyInstrumentKeyInput.selectedIndex].text;
+            const targetPrice = parseFloat(niftyTargetPriceInput.value);
+
+            if (!instrumentKey) { 
+                logTo(squareOffLogDiv, "Index Watch: Instrument key is required.", 'error');
+                return;
+            }
+            if (isNaN(targetPrice)) {
+                logTo(squareOffLogDiv, "Index Watch: Valid target price is required.", 'error');
+                return;
+            }
+
+            isMonitoringNifty = true;
+            niftyWatchStatusSpan.textContent = `Active - Monitoring ${selectedInstrumentText}`;
+            niftyWatchStatusSpan.className = 'info';
+            currentNiftyPriceSpan.textContent = `Fetching ${selectedInstrumentText}...`; // Clear old price/timestamp
+            logTo(squareOffLogDiv, `Index Watch Started: Instrument: ${selectedInstrumentText} (${instrumentKey}), Target: ${niftyTargetDirectionSelect.value} ${targetPrice}. Polling every ${NIFTY_POLL_INTERVAL_MS / 1000}s.`, 'info');
+            
+            updateButtonStates();
+
+            monitorNiftyPrice();
+            niftyMonitoringIntervalId = setInterval(monitorNiftyPrice, NIFTY_POLL_INTERVAL_MS);
+        }
+
+        function stopNiftyWatch() {
+            if (niftyMonitoringIntervalId) {
+                clearInterval(niftyMonitoringIntervalId);
+                niftyMonitoringIntervalId = null;
+            }
+            isMonitoringNifty = false;
+            const selectedInstrumentText = niftyInstrumentKeyInput.options[niftyInstrumentKeyInput.selectedIndex]?.text || "Index"; 
+            niftyWatchStatusSpan.textContent = "Idle";
+            niftyWatchStatusSpan.className = 'info';
+            currentNiftyPriceSpan.textContent = "N/A"; // Clear price and timestamp
+            if (loadedAccessToken && confirmCheckbox.checked) {
+                 logTo(squareOffLogDiv, `${selectedInstrumentText} Watch Stopped.`, 'info');
+            }
+            updateButtonStates();
+        }
+
+        startNiftyWatchBtn.addEventListener('click', startNiftyWatch);
+        stopNiftyWatchBtn.addEventListener('click', stopNiftyWatch);
+
+        // --- Initial Load ---
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTokenFromStorage(); 
+        });
+
+    </script>
+
+</body>
+</html>

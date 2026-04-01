@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upstox SL/Target Monitor (Flexible Position)</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; line-height: 1.6; }
+        .container { max-width: 700px; margin: auto; background-color: #f9f9f9; padding: 25px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        h1, h2 { color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;}
+        label { display: block; margin-top: 15px; font-weight: bold; color: #555; }
+        input[type="number"], select, button {
+            padding: 10px;
+            margin-top: 5px;
+            min-width: 180px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box; /* Include padding in width */
+            font-size: 1em;
+         }
+        input[type="number"] { width: 100%; } /* Make number inputs full width */
+        button {
+             cursor: pointer;
+             margin-right: 10px;
+             background-color: #007bff;
+             color: white;
+             border: none;
+             transition: background-color 0.2s ease;
+             margin-top: 20px; /* Add more space above buttons */
+        }
+        button:hover:not(:disabled) { background-color: #0056b3; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        #positionsList { list-style: none; padding: 0; max-height: 200px; overflow-y: auto; border: 1px solid #eee; margin-top: 10px; background-color: #fff;}
+        #positionsList li { padding: 8px 12px; border-bottom: 1px solid #eee; cursor: pointer; transition: background-color 0.2s ease; font-size: 0.95em;}
+        #positionsList li:last-child { border-bottom: none; }
+        #positionsList li:hover { background-color: #f0f0f0; }
+        #positionsList li.selected { background-color: #d0e0ff; border-left: 4px solid #0056b3; font-weight: bold; }
+        #selectedPositionInfo { margin-top: 10px; font-weight: bold; color: #0056b3; padding: 8px; background-color: #e7f3ff; border-radius: 4px; display: none; /* Hidden initially */ }
+        #status, #orderStatus {
+            margin-top: 20px;
+            padding: 12px;
+            border: 1px solid #ccc;
+            background-color: #fff;
+            min-height: 60px;
+            white-space: pre-wrap; /* Preserve line breaks */
+            word-wrap: break-word;
+            border-radius: 4px;
+            font-size: 0.95em;
+         }
+        .status-box { border-left-width: 4px; border-left-style: solid;} /* Base for status borders */
+        .error { color: #D8000C; background-color: #FFD2D2; border-color: #D8000C !important; }
+        .success { color: #270; background-color: #DFF2BF; border-color: #4F8A10 !important; }
+        .info { color: #00529B; background-color: #BDE5F8; border-color: #00529B !important; }
+        .warning { color: #9F6000; background-color: #FEEFB3; border-color: #9F6000 !important; } /* Added warning style */
+        #tokenInfo { font-size: 0.9em; color: #555; margin-bottom: 20px; padding: 10px; background-color: #eee; border-radius: 4px; }
+        hr { border: 0; height: 1px; background-color: #ddd; margin: 25px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Upstox SL/Target Monitor (Flexible Position)</h1>
+
+        <div id="tokenInfo">
+            Checking for Access Token in localStorage...
+        </div>
+
+        <label for="indexSelect">Select Index to Monitor:</label>
+        <select id="indexSelect">
+            <option value="NSE_INDEX|Nifty 50">Nifty 50</option>
+            <option value="BSE_INDEX|SENSEX">Sensex</option>
+            <!-- Add other indices if needed, ensure token is correct -->
+        </select>
+
+        <label for="stopLossInput">Index Stop Loss Level:</label>
+        <input type="number" id="stopLossInput" placeholder="e.g., 22000" step="any">
+
+        <label for="targetInput">Index Target Level:</label>
+        <input type="number" id="targetInput" placeholder="e.g., 22500" step="any">
+
+        <hr>
+
+        <h2>Select Open Option Position to Square Off (Optional before Start):</h2>
+        <p style="font-size: 0.9em; color: #666;">You can start monitoring the index first and select a position later. If a position is selected when SL/Target is hit, it will be squared off.</p>
+        <ul id="positionsList">
+            <li>Loading positions...</li>
+        </ul>
+        <div id="selectedPositionInfo">
+            No position selected. Click on a position above to enable auto square-off on trigger.
+        </div>
+
+        <hr>
+
+        <button id="startButton">Start Monitoring</button>
+        <button id="stopButton" disabled>Stop Monitoring</button>
+
+        <div id="status" class="status-box">
+            Status: Idle<br>
+            Current Index Price: N/A
+        </div>
+        <div id="orderStatus" class="status-box">
+            Order Status: No order placed yet.
+        </div>
+
+    </div>
+
+    <script>
+        // --- Start of JavaScript Logic ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- DOM Elements ---
+            const indexSelect = document.getElementById('indexSelect');
+            const stopLossInput = document.getElementById('stopLossInput');
+            const targetInput = document.getElementById('targetInput');
+            const positionsList = document.getElementById('positionsList');
+            const selectedPositionInfo = document.getElementById('selectedPositionInfo');
+            const startButton = document.getElementById('startButton');
+            const stopButton = document.getElementById('stopButton');
+            const statusDiv = document.getElementById('status');
+            const orderStatusDiv = document.getElementById('orderStatus');
+            const tokenInfoDiv = document.getElementById('tokenInfo');
+
+            // --- State Variables ---
+            let accessToken = null;
+            let monitoringInterval = null;
+            let isMonitoring = false;
+            let selectedPosition = null; // { instrument_token, quantity, product, holdingType, symbol }
+            let currentPositions = []; // Store fetched positions
+
+            // --- API Configuration ---
+            const API_VERSION_DATA = '2.0';
+            const API_VERSION_ORDER = '3.0';
+            const API_BASE_URL_V2 = 'https://api.upstox.com/v2';
+            const API_BASE_URL_ORDER_V3_HFT = 'https://api-hft.upstox.com/v3';
+
+            // --- Initialization ---
+            function initialize() {
+                accessToken = localStorage.getItem('upstoxAccessToken');
+                if (!accessToken) {
+                    tokenInfoDiv.textContent = 'Error: Access Token not found in localStorage (key: upstoxAccessToken). Please login to Upstox, get the token, and store it using browser developer tools (Application > Local Storage).';
+                    tokenInfoDiv.classList.add('error');
+                    disableInputs();
+                    return;
+                }
+                tokenInfoDiv.textContent = 'Access Token found. Fetching positions...';
+                tokenInfoDiv.classList.add('info');
+                fetchPositions(); // Fetch positions on load
+                setupEventListeners();
+                updateStatus('Ready. Configure SL/Target. Select a position if auto square-off is desired.', 'info');
+                updateSelectedPositionInfo(); // Update display based on initial null state
+            }
+
+            function disableInputs(isStartingMonitoring = false) {
+                startButton.disabled = isStartingMonitoring; // Disable start only when monitoring starts
+                stopLossInput.disabled = isStartingMonitoring;
+                targetInput.disabled = isStartingMonitoring;
+                indexSelect.disabled = isStartingMonitoring;
+                 // Allow position selection even when monitoring
+                // positionsList.style.pointerEvents = isStartingMonitoring ? 'none' : 'auto';
+                // positionsList.style.opacity = isStartingMonitoring ? '0.7' : '1';
+                stopButton.disabled = !isStartingMonitoring; // Enable stop only when monitoring
+            }
+
+            function enableInputs() {
+                 startButton.disabled = false;
+                 stopLossInput.disabled = false;
+                 targetInput.disabled = false;
+                 indexSelect.disabled = false;
+                 // positionsList.style.pointerEvents = 'auto';
+                 // positionsList.style.opacity = '1';
+                 stopButton.disabled = true; // Stop button is disabled initially
+                 updateSelectedPositionInfo(); // Refresh selection info display
+            }
+
+            function setupEventListeners() {
+                startButton.addEventListener('click', startMonitoring);
+                stopButton.addEventListener('click', () => stopMonitoring('User stopped'));
+                positionsList.addEventListener('click', handlePositionSelect);
+            }
+
+            // --- API Helper Functions (identical to previous version) ---
+            async function makeApiCall(url, method = 'GET', body = null, apiVersion = API_VERSION_DATA) {
+                 const headers = {
+                    'Accept': 'application/json',
+                    'Api-Version': apiVersion,
+                    'Authorization': `Bearer ${accessToken}`
+                };
+                if (method === 'POST' || method === 'PUT') {
+                    headers['Content-Type'] = 'application/json';
+                }
+                const options = { method: method, headers: headers };
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+                try {
+                    console.log(`Making API call: ${method} ${url}`, body ? `Payload: ${JSON.stringify(body)}` : '');
+                    const response = await fetch(url, options);
+                    const responseText = await response.text();
+                    if (!response.ok) {
+                        console.error(`API Error ${response.status} for ${url}: ${responseText}`);
+                        let errorMsg = `API Error ${response.status}: ${response.statusText}.`;
+                        try {
+                            const errorJson = JSON.parse(responseText);
+                            errorMsg += ` Details: ${errorJson.errors?.[0]?.message || responseText}`;
+                        } catch (e) { errorMsg += ` Details: ${responseText}`; }
+                        throw new Error(errorMsg);
+                    }
+                    if (response.status === 204 || responseText.length === 0) {
+                        console.log(`API Success: ${method} ${url} (Status ${response.status}, No Content)`);
+                        return null;
+                    }
+                    const data = JSON.parse(responseText);
+                    console.log(`API Success: ${method} ${url}`, data);
+                    return data;
+                } catch (error) {
+                    console.error(`Fetch/Processing Error for ${url}:`, error);
+                    updateStatus(`Network or API Error: ${error.message}. Check console.`, 'error');
+                    throw error;
+                }
+            }
+
+            async function fetchPositions() {
+                // No need to reset selectedPosition here, keep it if user selected one
+                updateStatus('Fetching open positions...', 'info');
+                positionsList.innerHTML = '<li>Loading...</li>';
+
+                try {
+                    const response = await makeApiCall(`${API_BASE_URL_V2}/portfolio/short-term-positions`, 'GET', null, API_VERSION_DATA);
+                    if (response && response.status === 'success' && response.data) {
+                        currentPositions = response.data.filter(pos =>
+                            parseInt(pos.net_qty) !== 0 &&
+                            (pos.instrument_token.startsWith('NSE_FO') || pos.instrument_token.startsWith('BSE_FO'))
+                        );
+                        renderPositions(currentPositions);
+                        if (!isMonitoring) { // Only enable inputs if not currently monitoring
+                           enableInputs();
+                        }
+                        updateStatus('Positions loaded. Configure SL/Target. Select position for auto square-off.', 'info');
+                    } else {
+                        throw new Error(`Failed to parse positions or unexpected API response status: ${response?.status}`);
+                    }
+                } catch (error) {
+                    updateStatus(`Error fetching positions: ${error.message}`, 'error');
+                    positionsList.innerHTML = '<li>Error loading positions. Check token or network.</li>';
+                    if (!isMonitoring) { // Consider if inputs should be disabled on error
+                        disableInputs();
+                    }
+                }
+            }
+
+             function renderPositions(positions) {
+                positionsList.innerHTML = ''; // Clear previous list
+                if (positions.length === 0) {
+                    positionsList.innerHTML = '<li>No open NFO/BFO positions found.</li>';
+                    return;
+                }
+
+                let foundSelected = false;
+                positions.forEach(pos => {
+                    const li = document.createElement('li');
+                    const netQty = parseInt(pos.net_qty);
+                    const positionType = netQty > 0 ? 'BUY' : 'SELL';
+                    const absQty = Math.abs(netQty);
+
+                    li.textContent = `${pos.tradingsymbol} | Qty: ${absQty} | Type: ${positionType} | P&L: ${parseFloat(pos.pnl).toFixed(2)}`;
+                    li.dataset.instrumentToken = pos.instrument_token;
+                    li.dataset.quantity = absQty.toString();
+                    li.dataset.product = pos.product;
+                    li.dataset.holdingType = positionType;
+                    li.dataset.symbol = pos.tradingsymbol;
+
+                    if (parseFloat(pos.pnl) > 0) li.style.color = 'green';
+                    else if (parseFloat(pos.pnl) < 0) li.style.color = 'red';
+
+                    // Re-apply selection if the selected position still exists
+                    if (selectedPosition && selectedPosition.instrument_token === pos.instrument_token) {
+                        li.classList.add('selected');
+                        foundSelected = true;
+                    }
+
+                    positionsList.appendChild(li);
+                });
+
+                // If the previously selected position no longer exists (e.g., squared off manually)
+                if (selectedPosition && !foundSelected) {
+                    console.log("Previously selected position not found in current positions list.");
+                    selectedPosition = null;
+                    updateSelectedPositionInfo(); // Update UI to show none selected
+                }
+            }
+
+             function handlePositionSelect(event) {
+                const targetLi = event.target.closest('li');
+                if (targetLi && targetLi.dataset.instrumentToken) {
+                    const previouslySelected = positionsList.querySelector('.selected');
+                    if (previouslySelected) {
+                        previouslySelected.classList.remove('selected');
+                    }
+
+                    targetLi.classList.add('selected');
+                    const ds = targetLi.dataset;
+                    selectedPosition = {
+                        instrument_token: ds.instrumentToken,
+                        quantity: parseInt(ds.quantity),
+                        product: ds.product,
+                        holdingType: ds.holdingType,
+                        symbol: ds.symbol
+                    };
+                    updateSelectedPositionInfo();
+                    console.log('Position selected:', selectedPosition);
+                     // If monitoring is already active, inform the user
+                     if (isMonitoring) {
+                          updateStatus(`Monitoring Active. Position ${selectedPosition.symbol} selected for square-off on trigger.`, 'info', false);
+                     }
+                }
+            }
+
+            function updateSelectedPositionInfo() {
+                 if (selectedPosition) {
+                     selectedPositionInfo.textContent = `Selected for Square-Off: ${selectedPosition.symbol} (Qty: ${selectedPosition.quantity}, Type: ${selectedPosition.holdingType})`;
+                     selectedPositionInfo.style.display = 'block';
+                 } else {
+                     selectedPositionInfo.textContent = 'No position selected. Click on a position above to enable auto square-off on trigger.';
+                      // Keep the info box visible but indicate none selected, or hide it? Let's keep it visible.
+                     selectedPositionInfo.style.display = 'block'; // Or 'none' if you prefer to hide it
+                 }
+            }
+
+            async function fetchLtp(instrumentKey) {
+                const url = `${API_BASE_URL_V2}/market-quote/ltp?instrument_key=${encodeURIComponent(instrumentKey)}`;
+                try {
+                    const response = await makeApiCall(url, 'GET', null, API_VERSION_DATA);
+                     if (response && response.status === 'success' ) {
+                        const instrumentKeyInResponse = instrumentKey.replace('|', ':');
+                        return response.data[instrumentKeyInResponse].last_price;
+                    } else {
+                         throw new Error(`LTP data not found for ${instrumentKey} in API response.`);
+                    }
+                } catch (error) {
+                    console.error(`Error fetching LTP for ${instrumentKey}: ${error.message}`);
+                    throw new Error(`Failed to fetch LTP for ${instrumentKey}: ${error.message}`);
+                }
+            }
+
+            // --- Monitoring Logic ---
+            function startMonitoring() {
+                // --- Validations ---
+                if (isMonitoring) {
+                    updateStatus('Monitoring is already active.', 'info');
+                    return;
+                }
+                // *** REMOVED: if (!selectedPosition) check ***
+
+                const stopLoss = parseFloat(stopLossInput.value);
+                const target = parseFloat(targetInput.value);
+                const indexToken = indexSelect.value;
+
+                if (isNaN(stopLoss) || isNaN(target) || stopLoss <= 0 || target <= 0) {
+                    updateStatus('Error: Please enter valid positive numbers for Stop Loss and Target levels.', 'error');
+                    return;
+                }
+                if (stopLoss >= target) {
+                    updateStatus('Error: Stop Loss level must be strictly below the Target level.', 'error');
+                    return;
+                }
+
+                // --- Start Process ---
+                isMonitoring = true;
+                disableInputs(true); // Disable config inputs, enable Stop button
+                orderStatusDiv.textContent = 'Order Status: Monitoring started. Waiting for trigger.';
+                orderStatusDiv.className = 'status-box info';
+
+                const indexName = indexSelect.options[indexSelect.selectedIndex].text;
+                let startMsg = `Monitoring Started: Index=${indexName}, SL=${stopLoss}, Target=${target}. `;
+                startMsg += selectedPosition ? `Position ${selectedPosition.symbol} is selected for square-off.` : `No position selected for square-off yet.`;
+                updateStatus(startMsg, 'info');
+
+                console.log(`Monitoring Started: Index Key=${indexToken}, SL=${stopLoss}, Target=${target}`, selectedPosition ? `Selected: ${selectedPosition.symbol}` : "No position selected");
+
+                if (monitoringInterval) clearInterval(monitoringInterval);
+
+                monitorLogic(indexToken, stopLoss, target).catch(err => {
+                     console.error("Initial monitor run failed:", err);
+                     updateStatus(`Error on initial check: ${err.message}. Monitoring stopped.`, 'error');
+                     stopMonitoring('Initial check failed');
+                 });
+
+                monitoringInterval = setInterval(() => {
+                    monitorLogic(indexToken, stopLoss, target).catch(err => {
+                        console.error("Error inside monitoring interval:", err);
+                        updateStatus(`Error during check: ${err.message}. Check console.`, 'error', false);
+                    });
+                }, 3000);
+            }
+
+            function stopMonitoring(reason = 'Unknown') {
+                if (monitoringInterval) {
+                    clearInterval(monitoringInterval);
+                    monitoringInterval = null;
+                }
+                if (isMonitoring) {
+                    isMonitoring = false;
+                    enableInputs(); // Re-enable config inputs, disable Stop button
+                    updateStatus(`Monitoring Stopped: ${reason}`, 'info');
+                    console.log(`Monitoring Stopped: ${reason}`);
+                }
+            }
+
+            async function monitorLogic(indexToken, stopLoss, target) {
+                if (!isMonitoring) return; // Exit if monitoring was stopped
+
+                let currentIndexPrice;
+                try {
+                    currentIndexPrice = await fetchLtp(indexToken);
+                } catch (error) {
+                     updateStatus(`Monitoring: Index=${indexSelect.options[indexSelect.selectedIndex].text}, SL=${stopLoss}, Target=${target}. Failed to get Index LTP: ${error.message}. Retrying...`, 'warning', false); // Use warning style
+                     return; // Skip check this cycle
+                }
+
+                 // Update status with current price (keep order status)
+                const currentStatusText = statusDiv.innerHTML.split('<br>')[0]; // Get first line (status message)
+                statusDiv.innerHTML = `${currentStatusText}<br>Current Index Price: ${currentIndexPrice}`; // Update only price line
+                statusDiv.className = 'status-box info'; // Keep info style during normal monitoring
+
+
+                let triggerCondition = null;
+                if (currentIndexPrice <= stopLoss) {
+                    triggerCondition = 'Stop Loss';
+                } else if (currentIndexPrice >= target) {
+                    triggerCondition = 'Target';
+                }
+
+                // If SL or Target is hit
+                if (triggerCondition) {
+                    const triggerMessage = `${triggerCondition} triggered at Index Price: ${currentIndexPrice}!`;
+                    const stopReason = `${triggerCondition} triggered`;
+
+                    // **** CRITICAL CHANGE: Check if a position is selected ****
+                    if (selectedPosition) {
+                        // Position is selected, proceed with square-off
+                        updateStatus(`${triggerMessage} Position ${selectedPosition.symbol} was selected. Attempting square-off...`, 'success');
+                        stopMonitoring(`${stopReason} - Squaring off ${selectedPosition.symbol}`); // Stop monitoring
+
+                        let optionLtp;
+                        try {
+                            optionLtp = await fetchLtp(selectedPosition.instrument_token);
+                            updateStatus(`${triggerMessage} Option ${selectedPosition.symbol} LTP: ${optionLtp}. Placing square-off order...`, 'success', false); // Keep status, update order div below
+                        } catch (error) {
+                            updateOrderStatus(`Error: ${triggerCondition} hit, but failed to fetch LTP for selected option ${selectedPosition.symbol}. Cannot place order automatically. Error: ${error.message}`, 'error');
+                            return; // Stop execution here
+                        }
+
+                        let transactionType;
+                        let limitPrice;
+                        const priceOffset = 0.5;
+                        if (selectedPosition.holdingType === 'BUY') {
+                            transactionType = 'SELL';
+                            limitPrice = Math.max(0.05, parseFloat((optionLtp - priceOffset).toFixed(2)));
+                        } else {
+                            transactionType = 'BUY';
+                            limitPrice = parseFloat((optionLtp + priceOffset).toFixed(2));
+                        }
+                        await placeSquareOffOrder(
+                            selectedPosition.instrument_token,
+                            selectedPosition.quantity,
+                            selectedPosition.product,
+                            transactionType,
+                            limitPrice
+                        );
+                    } else {
+                        // Position is NOT selected, just stop monitoring and notify
+                        updateStatus(`${triggerMessage} No position was selected for square-off.`, 'warning');
+                        stopMonitoring(`${stopReason} - No Position Selected`); // Stop monitoring
+                        updateOrderStatus(`${triggerCondition} level hit, but no position was selected. No order placed.`, 'warning');
+                    }
+                } // End of trigger condition block
+            } // end of monitorLogic
+
+            // --- Order Placement (identical to previous version) ---
+            async function placeSquareOffOrder(instrumentToken, quantity, product, transactionType, limitPrice) {
+                 // Guard clause: Ensure selectedPosition exists before using its symbol
+                const symbolName = selectedPosition ? selectedPosition.symbol : instrumentToken; // Fallback to token if somehow null
+                updateOrderStatus(`Attempting to place ${transactionType} order for ${quantity} qty of ${symbolName} at LIMIT price ${limitPrice}...`, 'info');
+
+                const orderPayload = { /* ... same payload as before ... */
+                    quantity: quantity, product: product, validity: "DAY", price: limitPrice,
+                    tag: "AutoSquareOff_SLT_Web", instrument_token: instrumentToken, order_type: "LIMIT",
+                    transaction_type: transactionType, disclosed_quantity: 0, trigger_price: 0,
+                    is_amo: false, slice: true
+                 };
+
+                try {
+                    const response = await makeApiCall(
+                        `${API_BASE_URL_ORDER_V3_HFT}/order/place`, 'POST', orderPayload, API_VERSION_ORDER
+                    );
+                    if (response && response.status === 'success' && response.data && response.data.order_id) {
+                        updateOrderStatus(`Square-off Order Placed Successfully! Order ID: ${response.data.order_id} (${transactionType} ${quantity} ${symbolName} @ ${limitPrice})`, 'success');
+                         selectedPosition = null; // Clear selection after successful order
+                         updateSelectedPositionInfo();
+                         setTimeout(fetchPositions, 7000);
+                    } else {
+                         const errorDetail = response?.errors?.[0]?.message || JSON.stringify(response);
+                         throw new Error(`Order placement API call succeeded but reported failure or unexpected response format. Details: ${errorDetail}`);
+                    }
+                } catch (error) {
+                    updateOrderStatus(`Error placing square-off order for ${symbolName}: ${error.message}. Check console for payload.`, 'error');
+                    console.error("Order Payload:", JSON.stringify(orderPayload));
+                }
+            }
+
+            // --- UI Update Functions ---
+             function updateStatus(message, type = 'info', clearOrder = true) {
+                const statusLines = statusDiv.innerHTML.split('<br>');
+                const priceLine = statusLines.length > 1 && statusLines[1].includes('Current Index Price:') ? statusLines[1] : 'Current Index Price: N/A';
+                statusDiv.innerHTML = `Status: ${message}<br>${priceLine}`;
+                statusDiv.className = `status-box ${type}`;
+                if (clearOrder) {
+                    // Only clear order status if explicitly asked (e.g., starting fresh)
+                    orderStatusDiv.textContent = 'Order Status: No order placed yet.';
+                    orderStatusDiv.className = 'status-box';
+                }
+            }
+
+             function updateOrderStatus(message, type = 'info') {
+                orderStatusDiv.textContent = `Order Status: ${message}`;
+                orderStatusDiv.className = `status-box ${type}`;
+             }
+
+            // --- Start the application ---
+            initialize();
+
+        });
+        // --- End of JavaScript Logic ---
+    </script>
+</body>
+</html>

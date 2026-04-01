@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upstox Dashboard</title>
+    <!-- Include pako for Gzip decompression -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <style>
+        /* ... (keep all previous styles) ... */
+        body { font-family: sans-serif; line-height: 1.6; padding: 15px; background-color: #f4f4f4; color: #333; }
+        .container { max-width: 1200px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .section { margin-bottom: 25px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9; }
+        h1, h2, h3 { color: #0056b3; }
+        button { padding: 8px 15px; margin: 5px 5px 5px 0; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 4px; }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        input[type="text"], input[type="search"], input[type="password"] { padding: 8px; margin-right: 5px; border: 1px solid #ccc; border-radius: 4px; min-width: 200px; }
+        input[type="file"] { margin-top: 5px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; table-layout: fixed; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; word-wrap: break-word; }
+        th { background-color: #e9ecef; }
+        /* Column Widths - Adjust as needed */
+        th.select-col, td.select-col { width: 40px; text-align: center;} /* Checkbox column */
+        th.symbol-col, td.symbol-col { width: 15%; } /* Symbol */
+        th.name-col, td.name-col { width: 25%; } /* Name */
+        th.exchange-col, td.exchange-col{ width: 10%; } /* Exchange */
+        th.key-col, td.key-col { width: 26%; } /* Key */
+        th.ltp-col, td.ltp-col { width: 10%; text-align: right; font-weight: bold; } /* New LTP column */
+
+        .status { margin-top: 10px; font-weight: bold; min-height: 1.2em; }
+        .error { color: red; }
+        .success { color: green; }
+        .search-results { max-height: 200px; overflow-y: auto; border: 1px solid #eee; margin-top: 10px; padding: 5px; }
+        .search-item { display: flex; justify-content: space-between; align-items: center; padding: 3px; border-bottom: 1px dashed #eee; }
+        .search-item button { padding: 2px 5px; font-size: 0.8em; }
+        .ltp-cell { font-weight: bold; min-width: 70px; text-align: right; } /* For watchlist tables */
+        #auth-status { font-style: italic; }
+        label { margin-right: 10px; }
+        .pagination { margin-top: 15px; text-align: center; }
+        .pagination button { margin: 0 5px; }
+        .pagination span { margin: 0 10px; font-weight: bold; }
+        #table-actions-section { margin-top: 15px; }
+        #table-actions-section button { margin-right: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Upstox Instrument & Watchlist Dashboard</h1>
+    <div class="nav-back">
+        <a href="index.html">« Back to Main Menu</a> |
+        <a href="auth_v2.html">Go to Authentication </a> |
+        <a href="square_off_v2.html">Square Off »</a>
+    </div>
+    <!-- Authentication Section (unchanged) -->
+    <div class="section">
+        <h2>Authentication</h2>
+        <label for="tokenInput">Access Token:</label>
+        <input type="password" id="tokenInput" placeholder="Paste token here to save" size="40">
+        <button id="saveTokenBtn">Save Token to Local Storage</button>
+        <p class="status">Status: <span id="auth-status">Checking...</span></p>
+        <p><small>Reads token from Local Storage (key: 'upstoxAccessToken').</small></p>
+    </div>
+
+    <!-- Instrument Management Section (unchanged) -->
+    <div class="section">
+        <h2>Instrument Management</h2>
+        <p>Load instruments into IndexedDB.</p>
+        <button id="loadFromApiBtn">Load from Upstox API</button>
+        <label for="manualFile">Or Upload complete.json.gz:</label>
+        <input type="file" id="manualFile" accept=".gz">
+        <p class="status">DB Status: <span id="db-status">Not Initialized</span> | Count: <span id="db-count">0</span>
+        </p>
+        <div id="load-status" class="status"></div>
+
+        <h3>Quick Search & Delete (Top 50)</h3>
+        <input type="search" id="instrumentSearchInput" placeholder="Search by Symbol or Name...">
+        <button id="deleteSelectedBtn" disabled>Delete Selected</button>
+        <div id="instrumentSearchResults" class="search-results"></div>
+        <div id="delete-status" class="status"></div>
+    </div>
+
+    <!-- Browse Instruments Section -->
+    <div class="section">
+        <h2>Browse Instruments</h2>
+        <input type="search" id="browseSearchInput" placeholder="Search all columns (Symbol, Name, Exchange, Key)...">
+        <div id="browse-status" class="status">Loading initial instruments...</div>
+        <table id="instrumentBrowseTable">
+            <thead>
+            <tr>
+                <!-- Added ltp-col, increased colspan -->
+                <th class="select-col"><input type="checkbox" id="selectAllTableCheckbox"
+                                              title="Select/Deselect All Matching Instruments Across Pages"></th>
+                <th class="symbol-col">Symbol</th>
+                <th class="name-col">Name</th>
+                <th class="exchange-col">Exchange</th>
+                <th class="key-col">Instrument Key</th>
+                <th class="ltp-col">Watchlist LTP</th> <!-- New Column -->
+            </tr>
+            </thead>
+            <tbody id="instrumentBrowseTableBody">
+            <!-- Placeholder updated colspan -->
+            <tr>
+                <td colspan="6" style="text-align:center;">Loading...</td>
+            </tr>
+            </tbody>
+        </table>
+        <div class="pagination">
+            <button id="prevPageBtn" disabled>Previous</button>
+            <span id="pageInfo">Page 1 of 1</span>
+            <button id="nextPageBtn" disabled>Next</button>
+        </div>
+        <!-- Section for Table Actions -->
+        <div id="table-actions-section">
+            <button id="addSelectedToWatchlistBtn" disabled>Add Selected to Watchlist</button>
+            <button id="deleteSelectedTableBtn" disabled>Delete Selected from Table</button>
+            <span id="selected-count-info"> (0 selected)</span>
+            <div id="table-actions-status" class="status"></div>
+        </div>
+    </div>
+
+    <!-- General Watchlist Section (unchanged) -->
+    <div class="section">
+        <h2>General Watchlist</h2>
+        <input type="search" id="watchlistSearchInput" placeholder="Search Instruments to Add...">
+        <div id="watchlistSearchResults" class="search-results"></div>
+        <h3>Current Watchlist</h3>
+        <button id="refreshGeneralLtpBtn">Refresh LTP</button>
+        <span id="general-ltp-status"></span>
+        <table id="generalWatchlistTable">
+            <thead>
+            <tr>
+                <th>Symbol</th>
+                <th>Name</th>
+                <th>Exchange</th>
+                <th>Instrument Key</th>
+                <th>LTP</th>
+                <th>Action</th>
+            </tr>
+            </thead>
+            <tbody><!-- Populated by JS --></tbody>
+        </table>
+    </div>
+
+    <!-- F&O Watchlist Section (unchanged) -->
+    <div class="section">
+        <h2>F&O Stock Watchlist</h2>
+        <button id="loadFnOBtn">Load F&O Symbols from DB</button>
+        <small>(NFO exchange)</small>
+        <div id="fno-load-status" class="status"></div>
+        <h3>F&O Watchlist</h3>
+        <button id="refreshFnoLtpBtn">Refresh LTP</button>
+        <span id="fno-ltp-status"></span>
+        <table id="fnoWatchlistTable">
+            <thead>
+            <tr>
+                <th>Symbol</th>
+                <th>Name</th>
+                <th>Exchange</th>
+                <th>Instrument Key</th>
+                <th>LTP</th>
+                <th>Action</th>
+            </tr>
+            </thead>
+            <tbody><!-- Populated by JS --></tbody>
+        </table>
+    </div>
+
+</div>
+
+<script>
+    // --- Constants and Global Vars ---
+    const UPSTOX_API_BASE = 'https://api.upstox.com/v2';
+    const INSTRUMENTS_URL = 'https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz';
+    const DB_NAME = 'UpstoxInstrumentsDB';
+    const DB_VERSION = 1;
+    const INSTRUMENTS_STORE = 'instruments';
+    const GENERAL_WATCHLIST_KEY = 'generalWatchlist';
+    const FNO_WATCHLIST_KEY = 'fnoWatchlist';
+    const TOKEN_KEY = 'upstoxAccessToken';
+
+    let db;
+    let generalWatchlist = [];
+    let fnoWatchlist = [];
+    let selectedInstrumentsForDelete = new Set(); // For quick search delete
+    let currentAccessToken = null;
+    let ltpPollingInterval = null;
+    const POLLING_INTERVAL_MS = 10000;
+
+    // --- State for Browse Table ---
+    let browseCurrentPage = 1;
+    const BROWSE_ITEMS_PER_PAGE = 50;
+    let browseCurrentSearchTerm = '';
+    let browseTotalItems = 0; // Total items matching the current filter
+    let selectedTableInstruments = new Set(); // Holds keys *only* when not in 'select all' mode
+    let isSelectAllAcrossPagesActive = false; // Flag for select all across pages
+    let browseSearchDebounceTimer;
+
+    // --- NEW GLOBALS ---
+    let ltpData = {}; // Stores { instrument_key: last_price }
+    let allWatchlistKeysSet = new Set(); // Combined set of keys from both watchlists
+    let currentBrowsePageInstruments = []; // Data for the currently viewed browse page
+
+    // --- DOM Elements (Ensure all are captured) ---
+    // ... (all previous elements remain the same) ...
+    const authStatusEl = document.getElementById('auth-status');
+    const tokenInputEl = document.getElementById('tokenInput');
+    const saveTokenBtn = document.getElementById('saveTokenBtn');
+    const dbStatusEl = document.getElementById('db-status');
+    const dbCountEl = document.getElementById('db-count');
+    const loadStatusEl = document.getElementById('load-status');
+    const loadFromApiBtn = document.getElementById('loadFromApiBtn');
+    const manualFileEl = document.getElementById('manualFile');
+    const instrumentSearchInputEl = document.getElementById('instrumentSearchInput');
+    const instrumentSearchResultsEl = document.getElementById('instrumentSearchResults');
+    const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+    const deleteStatusEl = document.getElementById('delete-status');
+    const watchlistSearchInputEl = document.getElementById('watchlistSearchInput');
+    const watchlistSearchResultsEl = document.getElementById('watchlistSearchResults');
+    const generalWatchlistTableBody = document.querySelector('#generalWatchlistTable tbody');
+    const generalLtpStatusEl = document.getElementById('general-ltp-status');
+    const refreshGeneralLtpBtn = document.getElementById('refreshGeneralLtpBtn');
+    const fnoWatchlistTableBody = document.querySelector('#fnoWatchlistTable tbody');
+    const loadFnOBtn = document.getElementById('loadFnOBtn');
+    const fnoLoadStatusEl = document.getElementById('fno-load-status');
+    const fnoLtpStatusEl = document.getElementById('fno-ltp-status');
+    const refreshFnoLtpBtn = document.getElementById('refreshFnoLtpBtn');
+    const browseSearchInputEl = document.getElementById('browseSearchInput');
+    const browseStatusEl = document.getElementById('browse-status');
+    const instrumentBrowseTableBody = document.getElementById('instrumentBrowseTableBody');
+    const prevPageBtn = document.getElementById('prevPageBtn');
+    const nextPageBtn = document.getElementById('nextPageBtn');
+    const pageInfoEl = document.getElementById('pageInfo');
+    const deleteSelectedTableBtn = document.getElementById('deleteSelectedTableBtn');
+    const addSelectedToWatchlistBtn = document.getElementById('addSelectedToWatchlistBtn');
+    const tableActionsStatusEl = document.getElementById('table-actions-status');
+    const selectAllTableCheckbox = document.getElementById('selectAllTableCheckbox');
+    const selectedCountInfoEl = document.getElementById('selected-count-info');
+
+
+    // --- Utility Functions ---
+    function updateStatus(element, message, isError = false, clearAfter = 0) { /* (unchanged) */
+        if (!element) return;
+        element.textContent = message;
+        element.className = `status ${isError ? 'error' : 'success'}`;
+        if (clearAfter > 0) {
+            setTimeout(() => { if (element.textContent === message) { element.textContent = ''; element.className = 'status'; } }, clearAfter);
+        }
+    }
+    function disableButtons(disabled = true) { /* (unchanged - relies on updateTableActionButtonsState) */
+        loadFromApiBtn.disabled = disabled;
+        manualFileEl.disabled = disabled;
+        loadFnOBtn.disabled = disabled;
+        deleteSelectedBtn.disabled = disabled || selectedInstrumentsForDelete.size === 0;
+
+        // Table action buttons state handled by updateTableActionButtonsState
+        updateTableActionButtonsState();
+        if(disabled) { // Ensure they are disabled if overall disabling is requested
+            deleteSelectedTableBtn.disabled = true;
+            addSelectedToWatchlistBtn.disabled = true;
+        }
+
+        prevPageBtn.disabled = disabled || browseCurrentPage <= 1;
+        nextPageBtn.disabled = disabled || browseCurrentPage >= Math.ceil(browseTotalItems / BROWSE_ITEMS_PER_PAGE);
+    }
+    function debounce(func, delay) { /* (unchanged) */
+        let timeoutId;
+        return function(...args) {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => { func.apply(this, args); }, delay);
+        };
+    }
+
+    // --- Authentication --- (unchanged)
+    function checkToken() { /* ... unchanged ... */
+        currentAccessToken = localStorage.getItem(TOKEN_KEY);
+        if (currentAccessToken) {
+            authStatusEl.textContent = `Token found (ending ...${currentAccessToken.slice(-6)}).`;
+            authStatusEl.className = 'success'; return true;
+        } else {
+            authStatusEl.textContent = 'Access Token not found in Local Storage.';
+            authStatusEl.className = 'error'; return false;
+        }
+    }
+    function saveToken() { /* ... unchanged ... */
+        const token = tokenInputEl.value.trim();
+        if (token) { localStorage.setItem(TOKEN_KEY, token); tokenInputEl.value = ''; checkToken(); startOrUpdateLtpPolling(); /* Start polling if token added */}
+        else { alert('Please paste a token before saving.'); }
+    }
+
+    // --- IndexedDB Functions --- (unchanged)
+    function openDB() { /* ... unchanged ... */
+         return new Promise((resolve, reject) => {
+            updateStatus(dbStatusEl, 'Initializing...');
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onerror = (e) => { updateStatus(dbStatusEl, `DB Error: ${e.target.errorCode}`, true); reject(`DB Error: ${e.target.errorCode}`); };
+            request.onsuccess = (e) => { db = e.target.result; updateStatus(dbStatusEl, 'DB Ready'); updateDbCount(); resolve(db); };
+            request.onupgradeneeded = (e) => { /* ... create object store and indices ... */
+                updateStatus(dbStatusEl, 'Upgrading DB...');
+                const dbo = e.target.result;
+                if (!dbo.objectStoreNames.contains(INSTRUMENTS_STORE)) {
+                    const store = dbo.createObjectStore(INSTRUMENTS_STORE, { keyPath: 'instrument_key' });
+                    store.createIndex('tradingsymbol', 'tradingsymbol', { unique: false });
+                    store.createIndex('name', 'name', { unique: false });
+                    store.createIndex('exchange', 'exchange', { unique: false });
+                    store.createIndex('segment', 'segment', { unique: false });
+                }
+            };
+        });
+    }
+    function addToDB(storeName, items) { /* ... unchanged ... */
+        return new Promise((resolve, reject) => {
+            if (!db) return reject("DB not initialized");
+            const transaction = db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName); let count = 0; const total = items.length;
+            items.forEach(item => {
+                if (!item || !item.instrument_key) { console.warn("Skipping invalid item:", item); return; }
+                const request = store.put(item);
+                request.onsuccess = () => { count++; if (count % 5000 === 0) updateStatus(loadStatusEl, `Processing: Added ${count}/${total}...`); };
+                request.onerror = (e) => console.error(`Failed to add item ${item.instrument_key}:`, e.target.error);
+            });
+            transaction.oncomplete = () => { updateDbCount(); resolve(count); };
+            transaction.onerror = (e) => { updateStatus(loadStatusEl, `Transaction Error: ${e.target.error}`, true); reject(`Transaction Error: ${e.target.error}`); };
+        });
+     }
+    function clearStore(storeName) { /* ... unchanged ... */
+        return new Promise((resolve, reject) => {
+            if (!db) return reject("DB not initialized");
+            const request = db.transaction(storeName, 'readwrite').objectStore(storeName).clear();
+            request.onsuccess = () => resolve();
+            request.onerror = (e) => reject(`Clear Store Error: ${e.target.error}`);
+        });
+    }
+    function getCount(storeName) { /* ... unchanged ... */
+         return new Promise((resolve, reject) => {
+            if (!db) return reject("DB not initialized");
+            const request = db.transaction(storeName, 'readonly').objectStore(storeName).count();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (e) => reject(`Count Error: ${e.target.error}`);
+        });
+    }
+    async function updateDbCount() { /* ... unchanged ... */
+        try {
+            const count = await getCount(INSTRUMENTS_STORE);
+            dbCountEl.textContent = count;
+             if (browseCurrentSearchTerm === '') {
+                 browseTotalItems = count;
+            }
+        } catch (error) { console.error("Error updating DB count:", error); dbCountEl.textContent = 'Error'; }
+    }
+    function searchInstrumentsDB(searchTerm) { /* ... unchanged ... */
+        return new Promise((resolve, reject) => {
+            if (!db) return reject("DB not initialized");
+            const MAX_RESULTS = 50;
+            const transaction = db.transaction(INSTRUMENTS_STORE, 'readonly');
+            const store = transaction.objectStore(INSTRUMENTS_STORE);
+            const symbolIndex = store.index('tradingsymbol');
+            const nameIndex = store.index('name');
+            const results = []; const lowerTerm = searchTerm.toLowerCase(); const upperTerm = searchTerm.toUpperCase();
+
+            const symbolRequest = symbolIndex.openCursor(IDBKeyRange.bound(upperTerm, upperTerm + '\uffff'));
+            symbolRequest.onsuccess = e => {
+                const cursor = e.target.result;
+                if (cursor && results.length < MAX_RESULTS) {
+                    if (!results.some(r => r.instrument_key === cursor.value.instrument_key)) results.push(cursor.value);
+                    cursor.continue();
+                } else {
+                    const nameRequest = nameIndex.openCursor();
+                    nameRequest.onsuccess = ev => {
+                        const nameCursor = ev.target.result;
+                        if (nameCursor && results.length < MAX_RESULTS) {
+                            const name = nameCursor.value.name ? nameCursor.value.name.toLowerCase() : '';
+                            if (name.includes(lowerTerm) && !results.some(r => r.instrument_key === nameCursor.value.instrument_key)) {
+                                results.push(nameCursor.value);
+                            }
+                            nameCursor.continue();
+                        } else { resolve(results); }
+                    };
+                    nameRequest.onerror = (ev) => reject(`Name Search Error: ${ev.target.error}`);
+                }
+            };
+            symbolRequest.onerror = (e) => reject(`Symbol Search Error: ${e.target.error}`);
+        });
+    }
+    function deleteInstrumentsDB(keys) { /* ... unchanged ... */
+        return new Promise((resolve, reject) => {
+            if (!db) return reject("DB not initialized"); if (!keys || keys.length === 0) return resolve(0);
+            const transaction = db.transaction(INSTRUMENTS_STORE, 'readwrite');
+            const store = transaction.objectStore(INSTRUMENTS_STORE); let deletedCount = 0;
+            keys.forEach(key => {
+                const request = store.delete(key); request.onsuccess = () => deletedCount++;
+                request.onerror = (e) => console.error(`Failed to delete key ${key}:`, e.target.error);
+            });
+            transaction.oncomplete = () => { updateDbCount(); resolve(deletedCount); };
+            transaction.onerror = (e) => reject(`Delete Transaction Error: ${e.target.error}`);
+        });
+    }
+    function getInstrumentsByKeys(keys) { /* ... unchanged ... */
+        return new Promise(async (resolve, reject) => {
+            if (!db) return reject("DB not initialized"); if (!keys || keys.length === 0) return resolve([]);
+            const transaction = db.transaction(INSTRUMENTS_STORE, 'readonly'); const store = transaction.objectStore(INSTRUMENTS_STORE);
+            const results = [];
+            const promises = keys.map(key => new Promise((res) => {
+                const request = store.get(key);
+                request.onsuccess = () => { if(request.result) results.push(request.result); else console.warn(`Key not found: ${key}`); res(); };
+                request.onerror = (e) => { console.error(`Error fetching key ${key}:`, e.target.error); res(); };
+            }));
+            try { await Promise.all(promises); resolve(results); } catch (error) { reject(error); }
+        });
+    }
+    function fetchAllMatchingKeys(searchTerm = '') { /* ... unchanged ... */
+         return new Promise((resolve, reject) => {
+            if (!db) return reject("DB not initialized");
+            const keys = [];
+            const transaction = db.transaction(INSTRUMENTS_STORE, 'readonly');
+            const store = transaction.objectStore(INSTRUMENTS_STORE);
+            const request = store.openKeyCursor();
+            updateStatus(browseStatusEl, `Fetching all keys for "${searchTerm || 'all items'}"...`);
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    const getRequest = store.get(cursor.primaryKey);
+                    getRequest.onsuccess = () => {
+                        if (getRequest.result && matchesSearch(getRequest.result, searchTerm)) {
+                            keys.push(cursor.primaryKey);
+                        }
+                        cursor.continue();
+                    }
+                    getRequest.onerror = () => { console.error("Error fetching record for key:", cursor.primaryKey); cursor.continue(); }
+                } else {
+                    updateStatus(browseStatusEl, `Fetched ${keys.length} matching keys.`, false, 3000);
+                    resolve(keys);
+                }
+            };
+            request.onerror = (event) => {
+                updateStatus(browseStatusEl, `Error fetching keys: ${event.target.error}`, true);
+                reject(`Fetch Keys Error: ${event.target.error}`);
+            };
+        });
+    }
+
+    // --- Instrument Loading --- (unchanged)
+    async function loadInstrumentsFromApi() { /* ... unchanged filter logic included ... */
+        if (!checkToken()) { updateStatus(loadStatusEl, "Cannot load: Access Token missing.", true); return; }
+        disableButtons(true); updateStatus(loadStatusEl, "Downloading instruments...");
+        try {
+            const response = await fetch(INSTRUMENTS_URL);
+            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+            updateStatus(loadStatusEl, "Decompressing data...");
+            const blob = await response.blob(); const arrayBuffer = await blob.arrayBuffer();
+            if (typeof pako === 'undefined') throw new Error("pako.js library not loaded.");
+            const decompressedData = pako.inflate(new Uint8Array(arrayBuffer));
+            const jsonString = new TextDecoder("utf-8").decode(decompressedData);
+            updateStatus(loadStatusEl, "Parsing JSON...");
+            const allInstruments = JSON.parse(jsonString);
+            if (!Array.isArray(allInstruments)) throw new Error("Parsed data is not an array.");
+            const totalParsed = allInstruments.length;
+            updateStatus(loadStatusEl, `Filtering ${totalParsed} instruments for NSE_EQ...`);
+            const filteredInstruments = allInstruments.filter(inst => inst && inst.instrument_key && typeof inst.instrument_key === 'string' && inst.instrument_key.includes('NSE_EQ'));
+            const filteredCount = filteredInstruments.length;
+            updateStatus(loadStatusEl, `Found ${filteredCount} matching instruments (out of ${totalParsed}).`);
+            if (filteredCount === 0) {
+                 updateStatus(loadStatusEl, `No instruments found matching NSE_EQ. Nothing added to DB.`, false, 5000);
+                 await clearStore(INSTRUMENTS_STORE); updateDbCount();
+            } else {
+                 updateStatus(loadStatusEl, `Clearing existing data...`); await clearStore(INSTRUMENTS_STORE);
+                 updateStatus(loadStatusEl, `Adding ${filteredCount} filtered instruments to DB...`);
+                 const addedCount = await addToDB(INSTRUMENTS_STORE, filteredInstruments);
+                 updateStatus(loadStatusEl, `Successfully loaded ${addedCount} filtered instruments from API.`, false, 5000);
+            }
+            resetBrowseState(); await loadAndRenderTablePage(1);
+        } catch (error) { updateStatus(loadStatusEl, `Error loading instruments: ${error.message}`, true); console.error("Loading error details:", error); }
+        finally { disableButtons(false); }
+    }
+    function loadInstrumentsFromFile(file) { /* ... unchanged filter logic included ... */
+        disableButtons(true); updateStatus(loadStatusEl, `Reading file: ${file.name}...`);
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const arrayBuffer = event.target.result; updateStatus(loadStatusEl, "Decompressing data...");
+                 if (typeof pako === 'undefined') throw new Error("pako.js library not loaded.");
+                const decompressedData = pako.inflate(new Uint8Array(arrayBuffer));
+                const jsonString = new TextDecoder("utf-8").decode(decompressedData);
+                updateStatus(loadStatusEl, "Parsing JSON...");
+                const allInstruments = JSON.parse(jsonString);
+                 if (!Array.isArray(allInstruments)) throw new Error("Parsed data is not an array.");
+                 const totalParsed = allInstruments.length;
+                 updateStatus(loadStatusEl, `Filtering ${totalParsed} instruments for NSE_EQ...`);
+                 const filteredInstruments = allInstruments.filter(inst => inst && inst.instrument_key && typeof inst.instrument_key === 'string' && inst.instrument_key.includes('NSE_EQ'));
+                 const filteredCount = filteredInstruments.length;
+                 updateStatus(loadStatusEl, `Found ${filteredCount} matching instruments (out of ${totalParsed}).`);
+                 if (filteredCount === 0) {
+                      updateStatus(loadStatusEl, `No instruments found matching NSE_EQ in file. Nothing added to DB.`, false, 5000);
+                      await clearStore(INSTRUMENTS_STORE); updateDbCount();
+                 } else {
+                      updateStatus(loadStatusEl, `Clearing existing data...`); await clearStore(INSTRUMENTS_STORE);
+                      updateStatus(loadStatusEl, `Adding ${filteredCount} filtered instruments to DB...`);
+                      const addedCount = await addToDB(INSTRUMENTS_STORE, filteredInstruments);
+                      updateStatus(loadStatusEl, `Successfully loaded ${addedCount} filtered instruments from file.`, false, 5000);
+                 }
+                resetBrowseState(); await loadAndRenderTablePage(1);
+            } catch (error) { updateStatus(loadStatusEl, `Error processing file: ${error.message}`, true); console.error("File processing error:", error); }
+            finally { disableButtons(false); manualFileEl.value = ''; }
+        };
+        reader.onerror = () => { updateStatus(loadStatusEl, `Error reading file.`, true); disableButtons(false); manualFileEl.value = ''; };
+        reader.readAsArrayBuffer(file);
+    }
+
+    // --- Instrument Quick Search & Delete --- (unchanged)
+    async function handleInstrumentSearch(event) { /* ... unchanged ... */
+        const term = event.target.value.trim(); instrumentSearchResultsEl.innerHTML = '';
+        selectedInstrumentsForDelete.clear(); updateDeleteButtonState(); deleteStatusEl.textContent = '';
+        if (term.length < 3) return;
+        try {
+            const results = await searchInstrumentsDB(term);
+            if (results.length === 0) instrumentSearchResultsEl.innerHTML = '<div>No instruments found.</div>';
+            else results.forEach(inst => {
+                const div = document.createElement('div'); div.className = 'search-item';
+                div.innerHTML = `<span><input type="checkbox" data-key="${inst.instrument_key}" class="delete-checkbox"> ${inst.tradingsymbol} (${inst.name ? inst.name.substring(0, 30)+'...' : 'N/A'}) - ${inst.exchange}</span>`;
+                instrumentSearchResultsEl.appendChild(div);
+            });
+            instrumentSearchResultsEl.querySelectorAll('.delete-checkbox').forEach(cb => cb.addEventListener('change', handleCheckboxChange));
+        } catch (error) { updateStatus(instrumentSearchResultsEl, `Search Error: ${error.message}`, true); }
+    }
+    function handleCheckboxChange(event) { /* ... unchanged ... */
+        const cb = event.target; const key = cb.dataset.key; if (cb.checked) selectedInstrumentsForDelete.add(key); else selectedInstrumentsForDelete.delete(key); updateDeleteButtonState();
+    }
+    function updateDeleteButtonState() { deleteSelectedBtn.disabled = selectedInstrumentsForDelete.size === 0; }
+    async function deleteSelectedInstruments() { /* ... unchanged ... */
+         const keys = Array.from(selectedInstrumentsForDelete); if (keys.length === 0) return;
+         if (!confirm(`QUICK DELETE: Sure to delete ${keys.length} item(s)?`)) return;
+         disableButtons(true); updateStatus(deleteStatusEl, `Deleting ${keys.length}...`);
+         try {
+             const deleted = await deleteInstrumentsDB(keys); updateStatus(deleteStatusEl, `Deleted ${deleted}.`, false, 5000);
+             instrumentSearchInputEl.value = ''; instrumentSearchResultsEl.innerHTML = ''; selectedInstrumentsForDelete.clear(); updateDeleteButtonState();
+             await loadAndRenderTablePage(); // Reload current browse page
+         } catch (error) { updateStatus(deleteStatusEl, `Delete Error: ${error.message}`, true); }
+         finally { disableButtons(false); updatePaginationControls(); updateTableActionButtonsState();}
+     }
+
+    // --- Browse Table Functions ---
+
+    function resetBrowseState() { /* ... unchanged ... */
+        browseCurrentPage = 1;
+        browseCurrentSearchTerm = '';
+        selectedTableInstruments.clear();
+        isSelectAllAcrossPagesActive = false;
+        currentBrowsePageInstruments = []; // Clear current page data
+        if(selectAllTableCheckbox) selectAllTableCheckbox.checked = false;
+        if(browseSearchInputEl) browseSearchInputEl.value = '';
+        updateTableActionButtonsState();
+        updatePaginationControls();
+    }
+    function matchesSearch(instrument, term) { /* ... unchanged ... */
+        if (!term) return true; const lowerTerm = term.toLowerCase();
+        return ((instrument.tradingsymbol && instrument.tradingsymbol.toLowerCase().includes(lowerTerm)) ||
+                (instrument.name && instrument.name.toLowerCase().includes(lowerTerm)) ||
+                (instrument.exchange && instrument.exchange.toLowerCase().includes(lowerTerm)) ||
+                (instrument.instrument_key && instrument.instrument_key.toLowerCase().includes(lowerTerm)));
+    }
+    function countInstruments(searchTerm = '') { /* ... unchanged ... */
+        return new Promise((resolve, reject) => {
+            if (!db) return reject("DB not initialized"); let count = 0;
+            const transaction = db.transaction(INSTRUMENTS_STORE, 'readonly'); const store = transaction.objectStore(INSTRUMENTS_STORE);
+            const request = store.openCursor();
+            request.onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (cursor) { if (matchesSearch(cursor.value, searchTerm)) count++; cursor.continue(); }
+                else resolve(count);
+            };
+            request.onerror = (e) => { console.error("Error counting:", e.target.error); reject(`Count Error: ${e.target.error}`); };
+        });
+    }
+    function fetchInstrumentsPage(page, searchTerm = '') { /* ... unchanged ... */
+        return new Promise((resolve, reject) => {
+             if (!db) return reject("DB not initialized"); const results = []; let skipped = 0; let added = 0; const offset = (page - 1) * BROWSE_ITEMS_PER_PAGE;
+             const transaction = db.transaction(INSTRUMENTS_STORE, 'readonly'); const store = transaction.objectStore(INSTRUMENTS_STORE);
+             const request = store.openCursor();
+             request.onsuccess = (e) => {
+                 const cursor = e.target.result;
+                 if (cursor) {
+                     if (matchesSearch(cursor.value, searchTerm)) {
+                         if (skipped >= offset && added < BROWSE_ITEMS_PER_PAGE) { results.push(cursor.value); added++; }
+                         skipped++;
+                     }
+                     if (added < BROWSE_ITEMS_PER_PAGE) cursor.continue(); else resolve(results);
+                 } else resolve(results);
+             };
+             request.onerror = (e) => { console.error("Error fetching page:", e.target.error); reject(`Fetch Page Error: ${e.target.error}`); };
+        });
+    }
+
+    // MODIFIED: renderInstrumentTablePage - Adds LTP column
+    function renderInstrumentTablePage(instruments) {
+        instrumentBrowseTableBody.innerHTML = ''; // Clear
+        currentBrowsePageInstruments = instruments; // Store for potential refresh
+
+        if (!instruments || instruments.length === 0) {
+            // Ensure colspan matches the number of columns (6 now)
+            instrumentBrowseTableBody.innerHTML = `<tr><td colspan="6" style="text-align:center;">No instruments found${browseCurrentSearchTerm ? ' matching "' + browseCurrentSearchTerm + '"' : ''}.</td></tr>`;
+            selectAllTableCheckbox.checked = false;
+            selectAllTableCheckbox.indeterminate = false;
+            return;
+        }
+
+        let areAllVisibleChecked = true;
+        instruments.forEach(inst => {
+            const row = instrumentBrowseTableBody.insertRow();
+            const isChecked = isSelectAllAcrossPagesActive || selectedTableInstruments.has(inst.instrument_key);
+            if (!isChecked) areAllVisibleChecked = false;
+
+            // Check if item is in any watchlist and get LTP
+            let ltpContent = '-';
+            const instrumentKey = inst.instrument_key;
+            if (allWatchlistKeysSet.has(instrumentKey)) {
+                const price = ltpData[instrumentKey];
+                if (price !== undefined && price !== null && price !== 'Err') {
+                    ltpContent = typeof price === 'number' ? price.toFixed(2) : price; // Format if number
+                } else if (price === 'Err') {
+                     ltpContent = 'Err';
+                } else {
+                    ltpContent = '...'; // Loading or not yet fetched
+                }
+            }
+
+            // Add new ltp-col cell
+            row.innerHTML = `
+                <td class="select-col"><input type="checkbox" class="table-select-checkbox" data-key="${instrumentKey}" ${isChecked ? 'checked' : ''}></td>
+                <td class="symbol-col">${inst.tradingsymbol || 'N/A'}</td>
+                <td class="name-col">${inst.name || 'N/A'}</td>
+                <td class="exchange-col">${inst.exchange || 'N/A'}</td>
+                <td class="key-col">${instrumentKey}</td>
+                <td class="ltp-col">${ltpContent}</td>
+            `;
+        });
+
+        // Update main checkbox state (unchanged logic)
+        if (!isSelectAllAcrossPagesActive) {
+             selectAllTableCheckbox.checked = instruments.length > 0 && areAllVisibleChecked; // Prevent check if empty
+             selectAllTableCheckbox.indeterminate = !areAllVisibleChecked && (Array.from(selectedTableInstruments).some(key => instruments.find(inst => inst.instrument_key === key)));
+         } else {
+             selectAllTableCheckbox.checked = true;
+             selectAllTableCheckbox.indeterminate = false;
+         }
+
+        instrumentBrowseTableBody.querySelectorAll('.table-select-checkbox').forEach(cb => {
+            cb.addEventListener('change', handleTableCheckboxChange);
+        });
+    }
+
+    // NEW: Refresh only the LTP in the current browse page view
+    function refreshCurrentBrowsePageLtp() {
+        if (currentBrowsePageInstruments && currentBrowsePageInstruments.length > 0) {
+            // Re-render using the stored data for the current page
+            // This will pick up the latest values from the global ltpData object
+            console.log("Refreshing LTP on current browse page");
+            renderInstrumentTablePage(currentBrowsePageInstruments);
+        }
+    }
+
+
+    function updatePaginationControls() { /* ... unchanged ... */
+        const totalPages = Math.ceil(browseTotalItems / BROWSE_ITEMS_PER_PAGE);
+        pageInfoEl.textContent = `Page ${browseCurrentPage} of ${totalPages > 0 ? totalPages : 1}`;
+        prevPageBtn.disabled = browseCurrentPage <= 1;
+        nextPageBtn.disabled = browseCurrentPage >= totalPages;
+    }
+
+     // MODIFIED: Stores fetched instruments
+     async function loadAndRenderTablePage(page = browseCurrentPage, search = browseCurrentSearchTerm) {
+        if (!db) {
+            updateStatus(browseStatusEl, "DB not ready.", true); instrumentBrowseTableBody.innerHTML = `<tr><td colspan="6">DB not ready.</td></tr>`; return; // Colspan 6
+        }
+        const searchChanged = search !== browseCurrentSearchTerm;
+        if(searchChanged) {
+            isSelectAllAcrossPagesActive = false;
+            selectedTableInstruments.clear();
+            if (selectAllTableCheckbox) selectAllTableCheckbox.checked = false;
+            currentBrowsePageInstruments = []; // Clear old page data on search change
+        }
+        browseCurrentSearchTerm = search;
+        browseCurrentPage = page;
+        disableButtons(true);
+        updateStatus(browseStatusEl, "Loading instruments..."); instrumentBrowseTableBody.innerHTML = `<tr><td colspan="6">Loading...</td></tr>`; // Colspan 6
+        try {
+            if (searchChanged || browseTotalItems === 0) {
+                updateStatus(browseStatusEl, `Counting matches for "${search || 'all'}"...`);
+                browseTotalItems = await countInstruments(search);
+            }
+            updateStatus(browseStatusEl, `Fetching page ${page} (${browseTotalItems} total)...`);
+            const instruments = await fetchInstrumentsPage(page, search);
+            // Store before rendering:
+            // currentBrowsePageInstruments = instruments; // This is now done inside renderInstrumentTablePage
+            renderInstrumentTablePage(instruments); // Renders the page and stores data
+            updatePaginationControls();
+            updateTableActionButtonsState();
+            updateStatus(browseStatusEl, `Page ${page}. Found ${browseTotalItems} match(es). Search: "${search || 'None'}"`, false, 5000);
+        } catch (error) {
+             console.error("Error loading/rendering table page:", error);
+             updateStatus(browseStatusEl, `Error: ${error.message}`, true);
+             instrumentBrowseTableBody.innerHTML = `<tr><td colspan="6">Error loading data.</td></tr>`; // Colspan 6
+             browseTotalItems = 0; currentBrowsePageInstruments = []; updatePaginationControls(); updateTableActionButtonsState();
+        } finally {
+             disableButtons(false);
+             updateTableActionButtonsState();
+        }
+    }
+    function goToPrevPage() { if (browseCurrentPage > 1) loadAndRenderTablePage(browseCurrentPage - 1); }
+    function goToNextPage() { const totalPages = Math.ceil(browseTotalItems / BROWSE_ITEMS_PER_PAGE); if (browseCurrentPage < totalPages) loadAndRenderTablePage(browseCurrentPage + 1); }
+    function handleBrowseSearchInput() { /* ... unchanged ... */
+         clearTimeout(browseSearchDebounceTimer);
+         browseSearchDebounceTimer = setTimeout(() => {
+             const searchTerm = browseSearchInputEl.value.trim();
+             if (searchTerm !== browseCurrentSearchTerm) {
+                  loadAndRenderTablePage(1, searchTerm);
+             }
+         }, 400);
+     }
+    function updateTableActionButtonsState() { /* ... unchanged ... */
+        let count;
+        if (isSelectAllAcrossPagesActive) { count = browseTotalItems; selectAllTableCheckbox.title = `Deselect all ${count} matching instrument(s)`; }
+        else { count = selectedTableInstruments.size; selectAllTableCheckbox.title = `Select/Deselect all matching instrument(s) (${browseTotalItems} total)`; }
+        const isDisabled = count === 0;
+        deleteSelectedTableBtn.disabled = isDisabled;
+        addSelectedToWatchlistBtn.disabled = isDisabled;
+        selectedCountInfoEl.textContent = ` (${count} selected)`;
+    }
+     async function handleTableCheckboxChange(event) { /* ... unchanged ... */
+        const checkbox = event.target; const key = checkbox.dataset.key; const isChecked = checkbox.checked;
+        if (!isChecked && isSelectAllAcrossPagesActive) {
+            updateStatus(tableActionsStatusEl, "Fetching details to switch selection mode...", false); disableButtons(true);
+            try {
+                 const allMatchingKeys = await fetchAllMatchingKeys(browseCurrentSearchTerm);
+                 selectedTableInstruments = new Set(allMatchingKeys); selectedTableInstruments.delete(key);
+                 isSelectAllAcrossPagesActive = false; selectAllTableCheckbox.checked = false;
+                 selectAllTableCheckbox.indeterminate = selectedTableInstruments.size > 0;
+                 updateStatus(tableActionsStatusEl, "Switched to individual selection mode.", false, 3000);
+            } catch(error) { updateStatus(tableActionsStatusEl, `Error switching mode: ${error.message}`, true); }
+            finally { disableButtons(false); updateTableActionButtonsState(); }
+        } else {
+             if (isChecked) { selectedTableInstruments.add(key); } else { selectedTableInstruments.delete(key); }
+            if (!isSelectAllAcrossPagesActive) {
+                const allVisibleCheckboxes = instrumentBrowseTableBody.querySelectorAll('.table-select-checkbox');
+                const allVisibleChecked = Array.from(allVisibleCheckboxes).every(cb => cb.checked);
+                selectAllTableCheckbox.checked = allVisibleCheckboxes.length > 0 && allVisibleChecked;
+                selectAllTableCheckbox.indeterminate = !selectAllTableCheckbox.checked && selectedTableInstruments.size > 0 && Array.from(allVisibleCheckboxes).some(cb => cb.checked);
+            }
+             updateTableActionButtonsState();
+        }
+     }
+     function handleSelectAllChange(event) { /* ... unchanged ... */
+         const isChecked = event.target.checked; isSelectAllAcrossPagesActive = isChecked;
+         if (isChecked) { selectedTableInstruments.clear(); }
+         instrumentBrowseTableBody.querySelectorAll('.table-select-checkbox').forEach(cb => { cb.checked = isChecked; });
+          selectAllTableCheckbox.indeterminate = false; updateTableActionButtonsState();
+     }
+    async function deleteSelectedTableInstruments() { /* ... unchanged ... */
+         let keysToDelete; let deleteCount;
+         if (isSelectAllAcrossPagesActive) {
+             deleteCount = browseTotalItems;
+             if (deleteCount === 0) { updateStatus(tableActionsStatusEl, "No instruments match filter to delete.", true, 5000); return; }
+             if (!confirm(`TABLE DELETE (ALL MATCHING): Delete all ${deleteCount} instrument(s) matching "${browseCurrentSearchTerm || 'None'}"?`)) return;
+             updateStatus(tableActionsStatusEl, `Fetching all ${deleteCount} keys to delete...`); disableButtons(true);
+             try { keysToDelete = await fetchAllMatchingKeys(browseCurrentSearchTerm); updateStatus(tableActionsStatusEl, `Fetched keys. Deleting ${keysToDelete.length}...`); }
+             catch (error) { updateStatus(tableActionsStatusEl, `Error fetching keys for deletion: ${error.message}`, true); disableButtons(false); return; }
+         } else {
+             keysToDelete = Array.from(selectedTableInstruments); deleteCount = keysToDelete.length;
+              if (deleteCount === 0) { updateStatus(tableActionsStatusEl, "No instruments explicitly selected for deletion.", true, 5000); return; }
+             if (!confirm(`TABLE DELETE (EXPLICIT): Delete ${deleteCount} selected instrument(s)?`)) return;
+              updateStatus(tableActionsStatusEl, `Deleting ${deleteCount} selected instrument(s)...`); disableButtons(true);
+         }
+         try {
+             const deletedCount = await deleteInstrumentsDB(keysToDelete); updateStatus(tableActionsStatusEl, `Successfully deleted ${deletedCount} of ${deleteCount} instrument(s).`, false, 5000);
+             selectedTableInstruments.clear(); isSelectAllAcrossPagesActive = false;
+             selectAllTableCheckbox.checked = false; selectAllTableCheckbox.indeterminate = false;
+             const newTotal = await countInstruments(browseCurrentSearchTerm); browseTotalItems = newTotal;
+             const totalPages = Math.ceil(browseTotalItems / BROWSE_ITEMS_PER_PAGE);
+             if (browseCurrentPage > totalPages && totalPages > 0) browseCurrentPage = totalPages;
+             else if (totalPages === 0) browseCurrentPage = 1;
+             await loadAndRenderTablePage(browseCurrentPage);
+         } catch (error) { updateStatus(tableActionsStatusEl, `Error deleting instruments: ${error.message}`, true); disableButtons(false); updateTableActionButtonsState(); }
+     }
+    async function addSelectedTableInstrumentsToWatchlist() { /* ... unchanged ... */
+        let keysToAdd; let selectedCount;
+        updateStatus(tableActionsStatusEl, "Preparing to add to watchlist...");
+        if (isSelectAllAcrossPagesActive) {
+            selectedCount = browseTotalItems;
+            if (selectedCount === 0) { updateStatus(tableActionsStatusEl, "No instruments match filter to add.", true, 5000); return; }
+            updateStatus(tableActionsStatusEl, `Fetching all ${selectedCount} keys to add...`); disableButtons(true);
+            try { keysToAdd = await fetchAllMatchingKeys(browseCurrentSearchTerm); updateStatus(tableActionsStatusEl, `Fetched keys. Adding ${keysToAdd.length}...`); }
+            catch (error) { updateStatus(tableActionsStatusEl, `Error fetching keys for adding: ${error.message}`, true); disableButtons(false); return; }
+        } else {
+            keysToAdd = Array.from(selectedTableInstruments); selectedCount = keysToAdd.length;
+             if (selectedCount === 0) { updateStatus(tableActionsStatusEl, "No instruments explicitly selected to add.", true, 5000); return; }
+             updateStatus(tableActionsStatusEl, `Adding ${selectedCount} selected instrument(s)...`); disableButtons(true);
+        }
+        try {
+            let addedCount = 0; let alreadyPresentCount = 0;
+            keysToAdd.forEach(key => {
+                if (!generalWatchlist.includes(key)) { generalWatchlist.push(key); addedCount++; }
+                else { alreadyPresentCount++; }
+            });
+            if (addedCount > 0) {
+                saveWatchlistToLocalStorage('general');
+                updateAllWatchlistKeysSet(); // Update the combined set
+                await renderWatchlist('general');
+                startOrUpdateLtpPolling(); // This will fetch LTP for new items
+                updateStatus(tableActionsStatusEl, `Added ${addedCount}. ${alreadyPresentCount} were already present.`, false, 5000);
+            } else { updateStatus(tableActionsStatusEl, `No new instruments added. ${alreadyPresentCount} already present.`, false, 5000); }
+        } catch (error) { updateStatus(tableActionsStatusEl, `Error adding instruments: ${error.message}`, true); }
+        finally { disableButtons(false); updateTableActionButtonsState(); }
+    }
+
+    // --- Watchlist Functions ---
+
+    // NEW: Update combined set of watchlist keys
+    function updateAllWatchlistKeysSet() {
+        allWatchlistKeysSet = new Set([...generalWatchlist, ...fnoWatchlist]);
+        console.log(`Updated combined watchlist keys set: ${allWatchlistKeysSet.size} items`);
+        // Trigger a refresh of the browse table LTP display if data is already loaded
+        refreshCurrentBrowsePageLtp();
+    }
+
+    // MODIFIED: Load from LS and update set
+    function loadWatchlistsFromLocalStorage() {
+        generalWatchlist = JSON.parse(localStorage.getItem(GENERAL_WATCHLIST_KEY) || '[]');
+        fnoWatchlist = JSON.parse(localStorage.getItem(FNO_WATCHLIST_KEY) || '[]');
+        updateAllWatchlistKeysSet(); // Update the set after loading
+    }
+    function saveWatchlistToLocalStorage(type) { /* (unchanged) */
+        localStorage.setItem(type === 'general' ? GENERAL_WATCHLIST_KEY : FNO_WATCHLIST_KEY, JSON.stringify(type === 'general' ? generalWatchlist : fnoWatchlist));
+        // No need to update set here, it's updated after add/remove actions
+    }
+    async function handleWatchlistSearch(event) { /* (unchanged - uses addInstrumentToWatchlist) */
+        const term = event.target.value.trim(); watchlistSearchResultsEl.innerHTML = ''; if (term.length < 3) return;
+        try { const results = await searchInstrumentsDB(term); if (results.length === 0) watchlistSearchResultsEl.innerHTML = '<div>No results.</div>';
+        else results.forEach(inst => { const div = document.createElement('div'); div.className = 'search-item'; const isInGen = generalWatchlist.includes(inst.instrument_key); div.innerHTML = `<span>${inst.tradingsymbol} (${inst.name ? inst.name.substring(0,30)+'...' : 'N/A'}) - ${inst.exchange}</span><span><button data-key="${inst.instrument_key}" class="add-general-btn" ${isInGen ? 'disabled' : ''}>Add General</button></span>`; watchlistSearchResultsEl.appendChild(div); });
+        watchlistSearchResultsEl.querySelectorAll('.add-general-btn').forEach(b => b.addEventListener('click', () => addInstrumentToWatchlist('general', b.dataset.key, b)));
+        } catch (error) { updateStatus(watchlistSearchResultsEl, `Search Error: ${error.message}`, true); }
+    }
+    // MODIFIED: Update set on add
+    async function addInstrumentToWatchlist(type, key, btn = null) {
+        const list = type === 'general' ? generalWatchlist : fnoWatchlist;
+        let added = false;
+        if (!list.includes(key)) {
+             list.push(key);
+             saveWatchlistToLocalStorage(type);
+             updateAllWatchlistKeysSet(); // Update the combined set
+             await renderWatchlist(type);
+             if (btn) { btn.disabled = true; btn.textContent = 'Added'; }
+             startOrUpdateLtpPolling(); // Fetch LTP for the new item
+             added = true;
+        }
+        return added;
+    }
+    // MODIFIED: Update set on remove
+     async function removeInstrumentFromWatchlist(type, key) {
+        let list = type === 'general' ? generalWatchlist : fnoWatchlist;
+        let idx = list.indexOf(key);
+        if (idx > -1) {
+            list.splice(idx, 1);
+            saveWatchlistToLocalStorage(type);
+            updateAllWatchlistKeysSet(); // Update the combined set
+            // Remove from ltpData cache? Optional, API call will just fail for it next time.
+            // delete ltpData[key];
+            await renderWatchlist(type);
+            startOrUpdateLtpPolling(); // Restart polling with updated list
+         }
+    }
+    async function renderWatchlist(type) { /* (unchanged - uses its own LTP cells) */
+        const tb = type === 'general' ? generalWatchlistTableBody : fnoWatchlistTableBody; const list = type === 'general' ? generalWatchlist : fnoWatchlist;
+        tb.innerHTML = `<tr><td colspan="6">Loading...</td></tr>`; if (list.length === 0) { tb.innerHTML = `<tr><td colspan="6">Watchlist empty.</td></tr>`; return; } // Colspan 6
+        try { const instruments = await getInstrumentsByKeys(list); tb.innerHTML = ''; if (instruments.length === 0 && list.length > 0) { tb.innerHTML = `<tr><td colspan="6">Details not found in DB. Reload instruments?</td></tr>`; return; } // Colspan 6
+        instruments.forEach(inst => { const r = tb.insertRow(); r.id = `${type}-row-${inst.instrument_key}`; const price = ltpData[inst.instrument_key]; let ltpTxt = '...'; if (price !== undefined && price !== null && price !== 'Err') ltpTxt = typeof price === 'number' ? price.toFixed(2) : price; else if (price === 'Err') ltpTxt = 'N/A'; r.innerHTML = `<td>${inst.tradingsymbol}</td><td>${inst.name || 'N/A'}</td><td>${inst.exchange}</td><td>${inst.instrument_key}</td><td class="ltp-cell" id="${type}-ltp-${inst.instrument_key}">${ltpTxt}</td><td><button class="remove-btn" data-type="${type}" data-key="${inst.instrument_key}">Remove</button></td>`; }); // Colspan 6
+        tb.querySelectorAll('.remove-btn').forEach(b => b.addEventListener('click', (e) => removeInstrumentFromWatchlist(e.target.dataset.type, e.target.dataset.key)));
+        // Fetch LTP if not already running or just triggered
+        // fetchLtpForAllWatchlists(); // Removed, rely on polling/manual refresh
+        } catch (error) { console.error(`Render ${type} WL Error:`, error); tb.innerHTML = `<tr><td colspan="6">Error: ${error.message}</td></tr>`; } // Colspan 6
+    }
+
+    // --- F&O Specific Functions ---
+    // MODIFIED: Update set after loading
+    async function loadFnoSymbols() {
+        if (!db) { updateStatus(fnoLoadStatusEl, "DB not ready.", true); return; } disableButtons(true); updateStatus(fnoLoadStatusEl, "Searching NFO in DB...");
+        try { const index = db.transaction(INSTRUMENTS_STORE, 'readonly').objectStore(INSTRUMENTS_STORE).index('exchange'); const req = index.getAll('NFO');
+        req.onsuccess = async e => { const nfo = e.target.result || []; updateStatus(fnoLoadStatusEl, `Found ${nfo.length} NFO items. Adding...`); let added = 0; nfo.forEach(inst => { if (!fnoWatchlist.includes(inst.instrument_key)) { fnoWatchlist.push(inst.instrument_key); added++; } });
+        if (added > 0) {
+             saveWatchlistToLocalStorage('fno');
+             updateAllWatchlistKeysSet(); // Update the combined set
+             await renderWatchlist('fno');
+             updateStatus(fnoLoadStatusEl, `Added ${added} new F&O items.`, false, 5000);
+             startOrUpdateLtpPolling(); // Fetch LTP for new items
+        } else { updateStatus(fnoLoadStatusEl, "No new F&O items found/added.", false, 5000); }
+        };
+        req.onerror = e => { throw new Error(`DB Query Error: ${e.target.error}`); }; } catch (error) { updateStatus(fnoLoadStatusEl, `F&O Load Error: ${error.message}`, true); console.error(error); } finally { disableButtons(false); }
+    }
+
+    // --- LTP Polling ---
+    // MODIFIED: Updates global ltpData and triggers browse table refresh
+    async function fetchLtpForAllWatchlists() {
+        if (!checkToken()) { updateStatus(generalLtpStatusEl, "Token?", true); updateStatus(fnoLtpStatusEl, "Token?", true); return; }
+        // Use the combined set for the API call keys
+        const keys = Array.from(allWatchlistKeysSet);
+        if (keys.length === 0) {
+             console.log("No items in any watchlist to fetch LTP.");
+             ltpData = {}; // Clear old data if watchlist is empty
+             refreshCurrentBrowsePageLtp(); // Update browse table to show no LTPs
+             return;
+        }
+
+        const url = `${UPSTOX_API_BASE}/market-quote/ltp?instrument_key=${encodeURIComponent(keys.join(','))}`;
+        updateStatus(generalLtpStatusEl, "Fetching..."); updateStatus(fnoLtpStatusEl, "Fetching...");
+        try {
+            const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${currentAccessToken}`, 'Accept': 'application/json' } });
+            if (!resp.ok) { const txt = await resp.text(); console.error("LTP API Error:", resp.status, txt); throw new Error(`HTTP ${resp.status}`); }
+            const res = await resp.json();
+
+            if (res.status === 'success' && res.data) {
+                const receivedData = res.data;
+                const now = new Date().toLocaleTimeString();
+                let dataUpdated = false;
+
+                // Update global ltpData and watchlist tables
+                keys.forEach(k => {
+                    const newPrice = getLastPriceByInstrumentToken(res.data,k )
+                    // Store in global cache
+                    if (ltpData[k] !== newPrice) { // Check if data changed
+                        ltpData[k] = newPrice;
+                        dataUpdated = true;
+                    }
+
+                    // Update specific watchlist table cells directly (more efficient than full re-render)
+                    const priceStr = newPrice !== 'Err' ? (typeof newPrice === 'number' ? newPrice.toFixed(2) : newPrice) : 'N/A';
+                    const gCell = document.getElementById(`general-ltp-${k}`); if(gCell) gCell.textContent = priceStr;
+                    const fCell = document.getElementById(`fno-ltp-${k}`); if(fCell) fCell.textContent = priceStr;
+                });
+
+                updateStatus(generalLtpStatusEl, `Upd: ${now}`, false, 15000); // Clear after 15s
+                updateStatus(fnoLtpStatusEl, `Upd: ${now}`, false, 15000);
+
+                // Refresh browse table display IF data actually changed
+                if(dataUpdated) {
+                    refreshCurrentBrowsePageLtp();
+                }
+
+            } else {
+                throw new Error(`API Error: ${res.message || 'Unknown Status'} - ${JSON.stringify(res.errors)}`);
+            }
+        } catch (error) {
+            console.error("LTP Fetch Error:", error);
+            updateStatus(generalLtpStatusEl, `Err: ${error.message}`, true); updateStatus(fnoLtpStatusEl, `Err: ${error.message}`, true);
+            // Clear data on auth error? Maybe not, keep last known? For now, keep.
+             // ltpData = {}; // Clear cache on error?
+             // refreshCurrentBrowsePageLtp(); // Refresh browse table showing errors/old data
+            if (error.message.includes('401')) { updateStatus(authStatusEl, "Token Invalid/Expired?", true); stopLtpPolling(); }
+        }
+    }
+    // MODIFIED: Uses the combined set size to decide polling
+    function startOrUpdateLtpPolling() {
+         stopLtpPolling();
+         if (allWatchlistKeysSet.size > 0 && currentAccessToken) {
+             console.log(`Starting LTP polling for ${allWatchlistKeysSet.size} keys.`);
+             fetchLtpForAllWatchlists(); // Immediate fetch
+             ltpPollingInterval = setInterval(fetchLtpForAllWatchlists, POLLING_INTERVAL_MS);
+         } else {
+             console.log("Not polling LTP (no keys in watchlist or no token).");
+             ltpData = {}; // Clear LTP data if not polling
+             refreshCurrentBrowsePageLtp(); // Update browse view
+         }
+    }
+    function stopLtpPolling() { /* (unchanged) */
+         if (ltpPollingInterval) { console.log("Stopping LTP polling."); clearInterval(ltpPollingInterval); ltpPollingInterval = null; }
+    }
+
+    // --- Initialization ---
+    document.addEventListener('DOMContentLoaded', async () => {
+        if (typeof pako === 'undefined') { alert("Error: pako.min.js library not loaded."); /* ... */ return; }
+
+        checkToken();
+        saveTokenBtn.addEventListener('click', saveToken);
+
+        try {
+            await openDB();
+            loadWatchlistsFromLocalStorage(); // Loads and updates the combined set
+            // Render watchlists first (they don't depend on LTP data initially)
+            await renderWatchlist('general');
+            await renderWatchlist('fno');
+            // Start polling *after* watchlists are loaded
+            startOrUpdateLtpPolling(); // Will trigger initial fetch if needed
+            resetBrowseState();
+            // Initial load for browse table (will show '...' for LTP initially if polling hasn't finished)
+            await loadAndRenderTablePage(1);
+        } catch (error) {
+            updateStatus(dbStatusEl, `DB Init Failed: ${error}`, true);
+            disableButtons(true);
+             instrumentBrowseTableBody.innerHTML = `<tr><td colspan="6">DB Init Failed.</td></tr>`; // Colspan 6
+             updateStatus(browseStatusEl, `DB Init Failed: ${error}`, true);
+        }
+
+        // --- Add Event Listeners ---
+        loadFromApiBtn.addEventListener('click', loadInstrumentsFromApi);
+        manualFileEl.addEventListener('change', (e) => { const f = e.target.files[0]; if (f && f.name.endsWith('.json.gz')) loadInstrumentsFromFile(f); else if (f) updateStatus(loadStatusEl, "Select '.json.gz' file.", true); manualFileEl.value='';});
+        instrumentSearchInputEl.addEventListener('input', debounce(handleInstrumentSearch, 300));
+        deleteSelectedBtn.addEventListener('click', deleteSelectedInstruments);
+        browseSearchInputEl.addEventListener('input', handleBrowseSearchInput);
+        prevPageBtn.addEventListener('click', goToPrevPage);
+        nextPageBtn.addEventListener('click', goToNextPage);
+        deleteSelectedTableBtn.addEventListener('click', deleteSelectedTableInstruments);
+        addSelectedToWatchlistBtn.addEventListener('click', addSelectedTableInstrumentsToWatchlist);
+        selectAllTableCheckbox.addEventListener('change', handleSelectAllChange);
+        watchlistSearchInputEl.addEventListener('input', debounce(handleWatchlistSearch, 300));
+        loadFnOBtn.addEventListener('click', loadFnoSymbols);
+        // Manual refresh buttons trigger fetch and subsequent UI updates
+        refreshGeneralLtpBtn.addEventListener('click', fetchLtpForAllWatchlists);
+        refreshFnoLtpBtn.addEventListener('click', fetchLtpForAllWatchlists);
+    });
+
+    function getLastPriceByInstrumentToken(data, token) {
+        for (const item of Object.values(data)) {
+            if (item.instrument_token === token) {
+                return item.last_price;
+            }
+        }
+        return null; // or throw error if needed
+    }
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Indian Tax Regime Comparison (Custom New Regime Rules)</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            line-height: 1.6;
+            max-width: 850px;
+            margin: 20px auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+        h1, h2, h3 {
+            text-align: center;
+            color: #333;
+        }
+        h3 {
+            margin-top: 25px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+            color: #555;
+        }
+        .form-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); /* Responsive grid */
+            gap: 15px 20px; /* Row gap, Column gap */
+        }
+        .form-group {
+            margin-bottom: 5px; /* Reduced bottom margin */
+        }
+        label {
+            display: block;
+            margin-bottom: 3px; /* Reduced margin */
+            font-weight: bold;
+            font-size: 0.9em; /* Slightly smaller label */
+        }
+        input[type="text"],
+        input[type="number"] {
+            width: 100%; /* Use 100% width */
+            padding: 8px 10px; /* Adjusted padding */
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box; /* Include padding/border in width */
+            font-size: 0.95em;
+        }
+        input#new_regime_std_deduction { /* Style the specific input */
+             background-color: #e9ecef; /* Light grey background */
+             font-weight: bold;
+             cursor: not-allowed;
+        }
+        .button-container {
+             grid-column: 1 / -1; /* Span full width */
+             margin-top: 20px;
+        }
+        button {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #result {
+            margin-top: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #fff;
+            display: none; /* Hidden initially */
+        }
+        #result h2 {
+            margin-top: 0;
+            color: #0056b3;
+        }
+         .result-details p {
+             margin: 8px 0;
+             font-size: 0.95em;
+         }
+        .warning {
+            font-size: 0.85em; /* Slightly smaller disclaimer */
+            color: #666; /* Lighter color */
+            margin-top: 25px;
+            border: 1px solid #dc3545; /* Red border for emphasis */
+            padding: 10px 15px;
+            border-radius: 5px;
+            background-color: #f8d7da; /* Light red background */
+            line-height: 1.5;
+        }
+         .warning strong {
+             color: #721c24; /* Darker red for heading */
+         }
+         .warning ul {
+             padding-left: 20px;
+             margin-top: 5px;
+             color: #721c24; /* Darker red text */
+         }
+         .warning li {
+             margin-bottom: 5px;
+         }
+        .error {
+            color: #dc3545; /* Bootstrap danger color */
+            font-weight: normal; /* Less aggressive */
+            font-size: 0.8em; /* Smaller error message */
+            margin-top: 3px;
+            display: block; /* Ensure it takes its own line */
+        }
+        strong { /* General strong tag styling */
+            color: #333;
+        }
+        .recommendation {
+            margin-top: 20px;
+            font-weight: bold;
+            font-size: 1.1em;
+            padding: 12px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .recommendation.old {
+            background-color: #d4edda; /* Bootstrap success light */
+            border: 1px solid #c3e6cb;
+            color: #155724; /* Bootstrap success dark */
+        }
+        .recommendation.new {
+             background-color: #d1ecf1; /* Bootstrap info light */
+            border: 1px solid #bee5eb;
+            color: #0c5460; /* Bootstrap info dark */
+        }
+         .recommendation.equal {
+             background-color: #e2e3e5; /* Bootstrap secondary light */
+             border: 1px solid #d6d8db;
+             color: #383d41; /* Bootstrap secondary dark */
+         }
+         .info-icon {
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            background-color: #6c757d; /* Bootstrap secondary */
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            font-size: 10px;
+            line-height: 15px; /* Vertically center '?' */
+            cursor: help;
+            margin-left: 4px;
+            font-weight: bold;
+            vertical-align: middle; /* Align better with text */
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Indian Tax Regime Comparison (Custom Rules)</h1>
+    <p style="text-align: center; font-size: 0.9em; color: #666;">Compare Old vs New Tax Regime using specific slabs and custom New Regime rules as requested.</p>
+
+    <div class="warning">
+        <strong>IMPORTANT NOTE ON CUSTOM RULES:</strong>
+        <ul>
+             <li>This calculator uses the specific Old and New Regime tax slabs **provided in the prompt**.</li>
+             <li>For the **New Regime calculation**, as specifically requested:
+                 <ul>
+                     <li>A **Standard Deduction of ₹75,000** is applied.</li>
+                     <li>**Employer's NPS contribution (Sec 80CCD(2))** is allowed as a deduction.</li>
+                     <li>**All other deductions** (80C, 80CCD(1), 80CCD(1B), 80D, HRA, Home Loan Interest, etc.) are **ignored**.</li>
+                 </ul>
+             </li>
+            <li>These New Regime rules used here **DO NOT match the official default Income Tax rules**. This is a custom calculation based purely on the prompt's requirements.</li>
+            <li>Consult a tax professional for advice based on current, official tax laws.</li>
+        </ul>
+    </div>
+
+
+    <form id="taxForm">
+        <h3>Basic Information</h3>
+        <div class="form-container">
+            <div class="form-group">
+                <label for="name">Name:</label>
+                <input type="text" id="name" placeholder="Enter your name">
+            </div>
+            <div class="form-group">
+                <label for="age">Age (in years):</label>
+                <input type="number" id="age" placeholder="Enter your age" required>
+                 <div id="ageError" class="error"></div>
+            </div>
+            <div class="form-group">
+                <label for="income">Gross Annual Income (INR):</label>
+                <input type="number" id="income" placeholder="Total income before any deductions" required>
+                 <div id="incomeError" class="error"></div>
+            </div>
+             <div class="form-group">
+                 <label for="old_regime_std_deduction">Std. Deduction (Old Regime) <span class="info-icon" title="Standard Deduction for Old Regime calculation. Typically ₹50,000 for Salaried/Pensioners. Set to 0 if not applicable.">?</span>:</label>
+                 <input type="number" id="old_regime_std_deduction" value="50000" required>
+                 <div id="oldStdDeductionError" class="error"></div>
+             </div>
+             <div class="form-group">
+                 <label for="new_regime_std_deduction">Std. Deduction (New Regime - Custom) <span class="info-icon" title="Fixed at ₹75,000 for this calculator's New Regime calculation, as per request.">?</span>:</label>
+                 <input type="number" id="new_regime_std_deduction" value="75000" readonly> <!-- Readonly as it's fixed -->
+                 <div id="newStdDeductionError" class="error"></div> <!-- Keep for potential future changes -->
+            </div>
+        </div>
+
+
+        <h3>Deductions (Enter all potentially eligible amounts)</h3>
+         <p style="font-size: 0.9em; color: #666; text-align: center; margin-top: -10px; margin-bottom: 15px;">Old Regime considers most. New Regime (in this tool) considers only Std. Deduction (₹75k) & Employer NPS (80CCD(2)).</p>
+
+        <div class="form-container">
+            <!-- Chapter VI A Deductions -->
+            <div class="form-group">
+                <label for="sec80c">Section 80C <span class="info-icon" title="Excludes 80CCD(1). Includes EPF, PPF, ELSS, Life Insurance Premium, Tuition Fees, Home Loan Principal etc. Combined limit with 80CCD(1) is ₹1,50,000 (Old Regime Only).">?</span>:</label>
+                <input type="number" id="sec80c" placeholder="e.g., 100000" value="0">
+                 <div id="sec80cError" class="error"></div>
+            </div>
+             <div class="form-group">
+                <label for="sec80ccd1">NPS - Sec 80CCD(1) <span class="info-icon" title="Employee NPS contribution. Included within the ₹1,50,000 limit of Sec 80C (Old Regime Only).">?</span>:</label>
+                <input type="number" id="sec80ccd1" placeholder="e.g., 50000" value="0">
+                 <div id="sec80ccd1Error" class="error"></div>
+            </div>
+             <div class="form-group">
+                <label for="sec80ccd1b">NPS - Sec 80CCD(1B) <span class="info-icon" title="Additional Employee NPS contribution. Separate limit of ₹50,000 (Old Regime Only).">?</span>:</label>
+                <input type="number" id="sec80ccd1b" placeholder="e.g., 50000" value="0">
+                 <div id="sec80ccd1bError" class="error"></div>
+            </div>
+            <div class="form-group">
+                <label for="sec80ccd2">NPS - Sec 80CCD(2) <span class="info-icon" title="Employer's NPS contribution. Eligible amount (e.g., up to 10%/14% salary). Deductible in Old Regime AND in this tool's custom New Regime calc.">?</span>:</label>
+                <input type="number" id="sec80ccd2" placeholder="e.g., 75000" value="0">
+                 <div id="sec80ccd2Error" class="error"></div>
+            </div>
+             <div class="form-group">
+                <label for="sec80d">Section 80D <span class="info-icon" title="Medical Insurance Premium. Limits vary. Enter eligible amount (Old Regime Only).">?</span>:</label>
+                <input type="number" id="sec80d" placeholder="e.g., 25000" value="0">
+                 <div id="sec80dError" class="error"></div>
+            </div>
+            <!-- Other Exemptions/Deductions -->
+             <div class="form-group">
+                <label for="hra">HRA Exemption <span class="info-icon" title="Calculated House Rent Allowance exemption. Enter the exempt amount (Old Regime Only).">?</span>:</label>
+                <input type="number" id="hra" placeholder="Enter calculated HRA exemption" value="0">
+                 <div id="hraError" class="error"></div>
+            </div>
+             <div class="form-group">
+                <label for="home_loan_interest">Home Loan Interest (Sec 24b) <span class="info-icon" title="Interest on housing loan (Self-occupied max ₹2L). (Old Regime Only).">?</span>:</label>
+                <input type="number" id="home_loan_interest" placeholder="e.g., 200000" value="0">
+                 <div id="homeLoanInterestError" class="error"></div>
+            </div>
+             <div class="form-group">
+                <label for="other_deductions">Other Deductions <span class="info-icon" title="Combine others like 80G, 80TTA etc. (Old Regime Only).">?</span>:</label>
+                <input type="number" id="other_deductions" placeholder="e.g., 10000" value="0">
+                 <div id="otherDeductionsError" class="error"></div>
+            </div>
+        </div>
+
+        <div class="button-container">
+            <button type="button" onclick="calculateAndCompare()">Calculate & Compare Regimes</button>
+        </div>
+    </form>
+
+    <div id="result">
+        <h2>Calculation Results</h2>
+        <div class="result-details">
+            <p><strong>Name:</strong> <span id="resultName"></span></p>
+            <p><strong>Age:</strong> <span id="resultAge"></span> years</p>
+            <p><strong>Gross Annual Income:</strong> ₹<span id="resultIncome"></span></p>
+             <p><strong>Total Deductions Applied (Old Regime):</strong> ₹<span id="resultDeductionsOld"></span></p>
+             <p><strong>Total Deductions Applied (New Regime - Custom):</strong> ₹<span id="resultDeductionsNew"></span> <span style="font-size:0.8em; color: #6c757d;">(Std Ded: ₹<span id="newStdDedApplied"></span> + NPS 80CCD(2): ₹<span id="newNPSApplied"></span>)</span></p>
+            <hr style="margin: 15px 0;">
+            <p><strong>Net Taxable Income (Old Regime):</strong> ₹<span id="oldTaxableIncome"></span></p>
+            <p><strong>Tax Calculation (Old Regime):</strong></p>
+                <ul style="font-size: 0.9em; margin-left: 20px; padding-left: 10px; list-style: disc;">
+                    <li>Base Tax: ₹<span id="oldBaseTax"></span></li>
+                    <li>Rebate u/s 87A: ₹<span id="oldRebate"></span></li>
+                    <li>Tax After Rebate: ₹<span id="oldTaxAfterRebate"></span></li>
+                    <li>Health & Edu Cess (4%): ₹<span id="oldCess"></span></li>
+                </ul>
+            <p><strong>Total Tax Payable (OLD Regime): ₹<span id="oldTaxResult" style="font-weight: bold; font-size: 1.1em;"></span></strong></p>
+            <hr style="margin: 15px 0;">
+            <p><strong>Net Taxable Income (New Regime - Custom):</strong> ₹<span id="newTaxableIncome"></span></p>
+             <p><strong>Tax Calculation (New Regime - Custom Slabs & Rules):</strong></p>
+                 <ul style="font-size: 0.9em; margin-left: 20px; padding-left: 10px; list-style: disc;">
+                    <li>Base Tax: ₹<span id="newBaseTax"></span></li>
+                    <li>Health & Edu Cess (4%): ₹<span id="newCess"></span></li>
+                </ul>
+            <p><strong>Total Tax Payable (NEW Regime - Custom): ₹<span id="newTaxResult" style="font-weight: bold; font-size: 1.1em;"></span></strong></p>
+        </div>
+        <div id="recommendation" class="recommendation"></div>
+    </div>
+
+    <script>
+        // --- Constants ---
+        const CESS_RATE = 0.04;
+        const SEC_80C_PLUS_80CCD1_LIMIT = 150000; // Combined limit for 80C and 80CCD(1)
+        const SEC_80CCD1B_LIMIT = 50000; // Additional NPS limit
+        const HOME_LOAN_INTEREST_LIMIT = 200000; // For self-occupied property
+        const OLD_REGIME_REBATE_LIMIT = 500000; // Taxable income limit for rebate in Old Regime
+        const CUSTOM_NEW_REGIME_STD_DED = 75000; // As per user request for this tool
+
+        // --- Input Validation Helper ---
+        function validateInput(valueStr, elementId, errorElementId, fieldName, isRequired = true) {
+            const errorDiv = document.getElementById(errorElementId);
+            errorDiv.textContent = ''; // Clear previous error
+            let valueNum = parseFloat(valueStr);
+
+            if (isRequired && valueStr.trim() === '') {
+                errorDiv.textContent = `${fieldName} is required.`;
+                return { isValid: false, value: NaN };
+            }
+             if (!isRequired && valueStr.trim() === '') {
+                 return { isValid: true, value: 0 }; // Optional empty field is valid, value is 0
+             }
+             if (isNaN(valueNum)) {
+                 errorDiv.textContent = `${fieldName} must be a valid number.`;
+                 return { isValid: false, value: NaN };
+             }
+             if (valueNum < 0) {
+                 errorDiv.textContent = `${fieldName} cannot be negative.`;
+                  return { isValid: false, value: NaN };
+             }
+            return { isValid: true, value: valueNum };
+        }
+
+        // --- Old Regime Tax Calculation ---
+        function calculateOldRegimeTax(grossIncome, age, deductions) {
+            let taxableIncome = grossIncome;
+            let totalDeductionsApplied = 0;
+
+            // Apply deductions in order: Std Ded, HRA, Home Loan Interest, Chapter VI-A
+            // 1. Standard Deduction (Old Regime specific input)
+            if (deductions.old_regime_std_deduction > 0) {
+                taxableIncome -= deductions.old_regime_std_deduction;
+                totalDeductionsApplied += deductions.old_regime_std_deduction;
+            }
+            // 2. HRA
+            if (deductions.hra > 0) {
+                 taxableIncome -= deductions.hra;
+                 totalDeductionsApplied += deductions.hra;
+            }
+            // 3. Home Loan Interest (Sec 24b)
+             const homeLoanInterestDeduction = Math.min(deductions.home_loan_interest, HOME_LOAN_INTEREST_LIMIT);
+             if (homeLoanInterestDeduction > 0) {
+                 taxableIncome -= homeLoanInterestDeduction;
+                 totalDeductionsApplied += homeLoanInterestDeduction;
+             }
+            // 4. Chapter VI-A
+            const combined_80C_80CCD1 = Math.min(deductions.sec80c + deductions.sec80ccd1, SEC_80C_PLUS_80CCD1_LIMIT);
+            taxableIncome -= combined_80C_80CCD1;
+            totalDeductionsApplied += combined_80C_80CCD1;
+
+            const ded80ccd1b = Math.min(deductions.sec80ccd1b, SEC_80CCD1B_LIMIT);
+            taxableIncome -= ded80ccd1b;
+            totalDeductionsApplied += ded80ccd1b;
+
+            if(deductions.sec80ccd2 > 0) { // Employer NPS
+                taxableIncome -= deductions.sec80ccd2;
+                totalDeductionsApplied += deductions.sec80ccd2;
+            }
+             if (deductions.sec80d > 0) { // Medical
+                taxableIncome -= deductions.sec80d;
+                totalDeductionsApplied += deductions.sec80d;
+             }
+             if (deductions.other_deductions > 0) { // Others
+                 taxableIncome -= deductions.other_deductions;
+                 totalDeductionsApplied += deductions.other_deductions;
+             }
+
+            taxableIncome = Math.max(0, taxableIncome); // Ensure non-negative
+
+            // Calculate Tax based on Old Regime Slabs
+            let baseTax = 0;
+            let slab1_limit = 250000, slab2_limit = 300000, slab3_limit = 500000, slab4_limit = 1000000;
+            if (age >= 80) { slab1_limit = 500000; slab2_limit = 500000; slab3_limit = 500000; }
+            else if (age >= 60) { slab1_limit = 300000; slab2_limit = 300000; slab3_limit = 500000; }
+
+            if (taxableIncome > slab4_limit) baseTax += (taxableIncome - slab4_limit) * 0.30;
+            if (taxableIncome > slab3_limit) baseTax += (Math.min(taxableIncome, slab4_limit) - slab3_limit) * 0.20;
+            if (age < 60) {
+                 if (taxableIncome > slab2_limit) baseTax += (Math.min(taxableIncome, slab3_limit) - slab2_limit) * 0.05;
+                 if (taxableIncome > slab1_limit) baseTax += (Math.min(taxableIncome, slab2_limit) - slab1_limit) * 0.05;
+            } else if (age >= 60 && age < 80) {
+                if (taxableIncome > slab1_limit) baseTax += (Math.min(taxableIncome, slab3_limit) - slab1_limit) * 0.05;
+            }
+
+             // Rebate u/s 87A (Old Regime)
+             let rebate = 0;
+             let taxAfterRebate = baseTax;
+             if (taxableIncome <= OLD_REGIME_REBATE_LIMIT && baseTax > 0) {
+                 rebate = baseTax; // Assuming tax <= 12500 if income <= 5L
+                 taxAfterRebate = 0;
+             }
+
+             let cess = taxAfterRebate * CESS_RATE;
+             let totalTax = taxAfterRebate + cess;
+
+            return { taxableIncome: Math.round(taxableIncome), totalDeductions: Math.round(totalDeductionsApplied), baseTax: Math.round(baseTax), rebate: Math.round(rebate), taxAfterRebate: Math.round(taxAfterRebate), cess: Math.round(cess), totalTax: Math.round(totalTax) };
+        }
+
+        // --- New Regime Tax Calculation (CUSTOM RULES as requested) ---
+        function calculateNewRegimeTax(grossIncome, deductions) {
+            let taxableIncome = grossIncome;
+            let totalDeductionsApplied = 0;
+            let stdDedApplied = 0;
+            let npsDedApplied = 0;
+
+            // CUSTOM RULE 1: Apply Fixed Standard Deduction of ₹75,000
+            if (CUSTOM_NEW_REGIME_STD_DED > 0) {
+                taxableIncome -= CUSTOM_NEW_REGIME_STD_DED;
+                totalDeductionsApplied += CUSTOM_NEW_REGIME_STD_DED;
+                stdDedApplied = CUSTOM_NEW_REGIME_STD_DED;
+            }
+
+            // CUSTOM RULE 2: Apply Employer NPS Contribution (80CCD(2))
+            if (deductions.sec80ccd2 > 0) {
+                taxableIncome -= deductions.sec80ccd2;
+                totalDeductionsApplied += deductions.sec80ccd2;
+                npsDedApplied = deductions.sec80ccd2;
+            }
+
+             // Ignore all other deductions (80C, 80CCD1, 1B, 80D, HRA, Home Loan etc.) for New Regime
+
+            taxableIncome = Math.max(0, taxableIncome); // Ensure non-negative
+
+            // Calculate Tax based on CUSTOM New Regime Slabs (from prompt)
+            let baseTax = 0;
+            const slab1 = 400000, slab2 = 800000, slab3 = 1200000, slab4 = 1600000, slab5 = 2000000, slab6 = 2400000;
+
+            if (taxableIncome > slab6) baseTax += (taxableIncome - slab6) * 0.30;
+            if (taxableIncome > slab5) baseTax += (Math.min(taxableIncome, slab6) - slab5) * 0.25;
+            if (taxableIncome > slab4) baseTax += (Math.min(taxableIncome, slab5) - slab4) * 0.20;
+            if (taxableIncome > slab3) baseTax += (Math.min(taxableIncome, slab4) - slab3) * 0.15;
+            if (taxableIncome > slab2) baseTax += (Math.min(taxableIncome, slab3) - slab2) * 0.10;
+            if (taxableIncome > slab1) baseTax += (Math.min(taxableIncome, slab2) - slab1) * 0.05;
+
+             // NO REBATE applied here as rules are custom
+
+             let cess = baseTax * CESS_RATE;
+             let totalTax = baseTax + cess;
+
+            return { taxableIncome: Math.round(taxableIncome), totalDeductions: Math.round(totalDeductionsApplied), stdDedApplied: Math.round(stdDedApplied), npsDedApplied: Math.round(npsDedApplied), baseTax: Math.round(baseTax), cess: Math.round(cess), totalTax: Math.round(totalTax) };
+        }
+
+        // --- Currency Formatting Helper ---
+        function formatIndianCurrency(num) {
+             if (typeof num !== 'number' || isNaN(num)) return '0';
+             return Math.round(num).toLocaleString('en-IN');
+        }
+
+        // --- Main Calculation Trigger ---
+        function calculateAndCompare() {
+            // --- Input Gathering ---
+            const name = document.getElementById('name').value.trim();
+            const ageStr = document.getElementById('age').value;
+            const incomeStr = document.getElementById('income').value;
+            const oldStdDeductionStr = document.getElementById('old_regime_std_deduction').value;
+            // New regime std deduction is fixed, read directly from constant later
+            const sec80cStr = document.getElementById('sec80c').value;
+            const sec80ccd1Str = document.getElementById('sec80ccd1').value;
+            const sec80ccd1bStr = document.getElementById('sec80ccd1b').value;
+            const sec80ccd2Str = document.getElementById('sec80ccd2').value; // Used in both regimes per custom rule
+            const sec80dStr = document.getElementById('sec80d').value;
+            const hraStr = document.getElementById('hra').value;
+            const homeLoanInterestStr = document.getElementById('home_loan_interest').value;
+            const otherDeductionsStr = document.getElementById('other_deductions').value;
+
+            // --- Validation ---
+            let isValid = true;
+            const ageVal = validateInput(ageStr, 'age', 'ageError', 'Age', true);
+            const incomeVal = validateInput(incomeStr, 'income', 'incomeError', 'Gross Income', true);
+            const oldStdDedVal = validateInput(oldStdDeductionStr, 'old_regime_std_deduction', 'oldStdDeductionError', 'Old Regime Std. Deduction', true);
+            // No validation needed for readonly new regime std ded input, but check others
+            const sec80cVal = validateInput(sec80cStr, 'sec80c', 'sec80cError', 'Section 80C', false);
+            const sec80ccd1Val = validateInput(sec80ccd1Str, 'sec80ccd1', 'sec80ccd1Error', '80CCD(1)', false);
+            const sec80ccd1bVal = validateInput(sec80ccd1bStr, 'sec80ccd1b', 'sec80ccd1bError', '80CCD(1B)', false);
+            const sec80ccd2Val = validateInput(sec80ccd2Str, 'sec80ccd2', 'sec80ccd2Error', '80CCD(2)', false);
+            const sec80dVal = validateInput(sec80dStr, 'sec80d', 'sec80dError', 'Section 80D', false);
+            const hraVal = validateInput(hraStr, 'hra', 'hraError', 'HRA Exemption', false);
+            const homeLoanVal = validateInput(homeLoanInterestStr, 'home_loan_interest', 'homeLoanInterestError', 'Home Loan Interest', false);
+            const othersVal = validateInput(otherDeductionsStr, 'other_deductions', 'otherDeductionsError', 'Other Deductions', false);
+
+            isValid = ageVal.isValid && incomeVal.isValid && oldStdDedVal.isValid &&
+                      sec80cVal.isValid && sec80ccd1Val.isValid && sec80ccd1bVal.isValid && sec80ccd2Val.isValid &&
+                      sec80dVal.isValid && hraVal.isValid && homeLoanVal.isValid && othersVal.isValid;
+
+            if (!isValid) {
+                 document.getElementById('result').style.display = 'none';
+                const firstError = document.querySelector('.error:not(:empty)');
+                if(firstError) firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+
+            // --- Prepare Data ---
+            const grossIncome = incomeVal.value;
+            const age = ageVal.value;
+            // Consolidate all deduction inputs for passing to functions
+            const deductions = {
+                old_regime_std_deduction: oldStdDedVal.value, // Specific to old regime calc
+                // new_regime_std_deduction is handled by constant CUSTOM_NEW_REGIME_STD_DED
+                sec80c: sec80cVal.value,
+                sec80ccd1: sec80ccd1Val.value,
+                sec80ccd1b: sec80ccd1bVal.value,
+                sec80ccd2: sec80ccd2Val.value, // Passed to both, applied differently
+                sec80d: sec80dVal.value,
+                hra: hraVal.value,
+                home_loan_interest: homeLoanVal.value,
+                other_deductions: othersVal.value
+            };
+
+            // --- Calculations ---
+            const oldRegimeResult = calculateOldRegimeTax(grossIncome, age, deductions);
+            const newRegimeResult = calculateNewRegimeTax(grossIncome, deductions); // Pass all deductions, function will pick needed ones
+
+            // --- Display Results ---
+            document.getElementById('result').style.display = 'block';
+            document.getElementById('resultName').textContent = name || 'N/A';
+            document.getElementById('resultAge').textContent = age;
+            document.getElementById('resultIncome').textContent = formatIndianCurrency(grossIncome);
+
+            // Old Regime Details
+            document.getElementById('resultDeductionsOld').textContent = formatIndianCurrency(oldRegimeResult.totalDeductions);
+            document.getElementById('oldTaxableIncome').textContent = formatIndianCurrency(oldRegimeResult.taxableIncome);
+            document.getElementById('oldBaseTax').textContent = formatIndianCurrency(oldRegimeResult.baseTax);
+            document.getElementById('oldRebate').textContent = formatIndianCurrency(oldRegimeResult.rebate);
+            document.getElementById('oldTaxAfterRebate').textContent = formatIndianCurrency(oldRegimeResult.taxAfterRebate);
+            document.getElementById('oldCess').textContent = formatIndianCurrency(oldRegimeResult.cess);
+            document.getElementById('oldTaxResult').textContent = formatIndianCurrency(oldRegimeResult.totalTax);
+
+            // New Regime Details (Custom)
+            document.getElementById('resultDeductionsNew').textContent = formatIndianCurrency(newRegimeResult.totalDeductions);
+            document.getElementById('newStdDedApplied').textContent = formatIndianCurrency(newRegimeResult.stdDedApplied); // Show breakdown
+            document.getElementById('newNPSApplied').textContent = formatIndianCurrency(newRegimeResult.npsDedApplied);     // Show breakdown
+            document.getElementById('newTaxableIncome').textContent = formatIndianCurrency(newRegimeResult.taxableIncome);
+            document.getElementById('newBaseTax').textContent = formatIndianCurrency(newRegimeResult.baseTax);
+            document.getElementById('newCess').textContent = formatIndianCurrency(newRegimeResult.cess);
+            document.getElementById('newTaxResult').textContent = formatIndianCurrency(newRegimeResult.totalTax);
+
+            // --- Recommendation ---
+            const recommendationDiv = document.getElementById('recommendation');
+            let recommendationText = '';
+            recommendationDiv.className = 'recommendation'; // Reset
+
+            const oldTaxTotal = oldRegimeResult.totalTax;
+            const newTaxTotal = newRegimeResult.totalTax;
+            const difference = Math.abs(oldTaxTotal - newTaxTotal);
+
+            if (oldTaxTotal < newTaxTotal) {
+                recommendationText = `Based on the specified slabs & custom rules, the <strong>OLD Regime</strong> appears more beneficial, saving approx. ₹${formatIndianCurrency(difference)}.`;
+                recommendationDiv.classList.add('old');
+            } else if (newTaxTotal < oldTaxTotal) {
+                recommendationText = `Based on the specified slabs & custom rules (₹75k Std Ded + 80CCD(2) in New), the <strong>NEW Regime</strong> appears more beneficial, saving approx. ₹${formatIndianCurrency(difference)}.`;
+                 recommendationDiv.classList.add('new');
+            } else {
+                recommendationText = `Based on the specified slabs & custom rules, both regimes result in the <strong>same tax amount</strong> (₹${formatIndianCurrency(oldTaxTotal)}).`;
+                 recommendationDiv.classList.add('equal');
+            }
+            recommendationDiv.innerHTML = recommendationText;
+
+            document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RoboTrader UI (Frontend)</title> <!-- Title updated -->
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <style>
+        /* --- Keep previous CSS styles --- */
+        body { padding-top: 15px; padding-bottom: 20px; }
+        .log-area { height: 150px; background-color: #f8f9fa; border: 1px solid #dee2e6; font-family: monospace; font-size: 0.75rem; overflow-y: scroll; white-space: pre-wrap; word-wrap: break-word; margin-top: 15px; }
+        .table-sm th, .table-sm td { padding: 0.25rem 0.4rem; vertical-align: middle; font-size: 0.8rem; text-align: right; white-space: nowrap; }
+        .strike-col, .checkbox-col { text-align: center !important; font-weight: bold; }
+        .strike-col { background-color: #f8f9fa; }
+        .call-bg { background-color: rgba(25, 135, 84, 0.05); }
+        .put-bg { background-color: rgba(220, 53, 69, 0.05); }
+        .table-sm thead th { position: sticky; top: 0; background-color: #e9ecef; z-index: 10; }
+        .strike-highlight { background-color: #dee2e6 !important; font-weight: bold; }
+        #loadingIndicator { display: none; align-items: center; justify-content: center; } /* Added alignment */
+        .order-info { font-size: 0.85rem; color: #6c757d; }
+        .table-container { max-height: 55vh; overflow-y: auto; overflow-x: auto; border: 1px solid #dee2e6; }
+        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { opacity: 1; }
+        .form-label-sm { font-size: 0.9rem; margin-bottom: 0.2rem; }
+        .status-section { background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 10px; border-radius: 5px; margin-top: 10px; }
+        .status-section h6 { margin-bottom: 5px; }
+        .basket-display { font-size: 0.8rem; max-height: 60px; overflow-y: auto; border: 1px dashed #ccc; padding: 5px; margin-top: 5px; background-color: #fff;}
+        .error-text { color: red; font-weight: bold; }
+        .warn-text { color: #fd7e14; font-weight: bold;}
+        .success-text { color: green; font-weight: bold; }
+        .info-text { color: blue; }
+
+        /* --- Styles for LTP Indicator --- */
+        .ltp-indicator-bar { height: 8px; background: linear-gradient(to right, red, orange, yellow, lightgreen, green); border-radius: 4px; margin-top: 5px; position: relative; border: 1px solid #ccc; }
+        .ltp-marker { position: absolute; width: 4px; height: 12px; background-color: #000; border-radius: 1px; top: -3px; transform: translateX(-50%); transition: left 0.5s ease; box-shadow: 0 0 2px rgba(0,0,0,0.5); }
+        .ltp-info-text { font-size: 0.75rem; color: #6c757d; margin-top: 0; line-height: 1.2; }
+    </style>
+</head>
+<body>
+<div class="container-fluid">
+    <h3 class="mb-3">RoboTrader UI (Frontend)</h3>
+    <div class="nav-back">
+        <!-- Links might need adjustment depending on your overall structure -->
+        <!-- <a href="index.html">« Back to Main Menu</a> | -->
+        <!-- <a href="auth_v2.html">Go to Authentication </a> | -->
+        <!-- <a href="square_off_v2.html">Square Off »</a> -->
+    </div>
+    <!-- Removed Token Status - Handled by backend -->
+    <div class="alert alert-info py-2" role="alert" id="backendStatus">Connecting to backend...</div>
+
+    <!-- Input Controls -->
+    <div class="row g-2 align-items-end mb-3">
+        <div class="col-md-3">
+            <label for="indexSelect" class="form-label form-label-sm">Index:</label>
+            <select id="indexSelect" class="form-select form-select-sm">
+                <option value="NIFTY" data-instrument-key="NSE_INDEX|Nifty 50" data-lot-size="75">NIFTY 50</option>
+                <option value="BANKNIFTY" data-instrument-key="NSE_INDEX|Nifty Bank" data-lot-size="30">BANKNIFTY</option>
+                <option value="FINNIFTY" data-instrument-key="NSE_INDEX|Nifty Fin Service" data-lot-size="65">FINNIFTY</option>
+                <option value="MIDCPNIFTY" data-instrument-key="NSE_INDEX|Nifty Midcap Select" data-lot-size="120">MIDCP NIFTY</option>
+                <option value="SENSEX" data-instrument-key="BSE_INDEX|SENSEX" data-lot-size="20">SENSEX</option>
+                <option value="BANKEX" data-instrument-key="BSE_INDEX|BANKEX" data-lot-size="15">BANKEX</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label for="expiryDate" class="form-label form-label-sm">Expiry Date:</label>
+            <input type="date" id="expiryDate" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-1">
+            <label for="quantityLots" class="form-label form-label-sm">Lots:</label>
+            <input type="number" id="quantityLots" class="form-control form-control-sm" value="1" min="1" step="1">
+        </div>
+        <div class="col-md-2">
+            <button id="fetchChainBtn" class="btn btn-primary btn-sm w-100">Fetch Chain</button>
+        </div>
+        <div class="col-md-2">
+            <button id="fetchOhlcBtn" class="btn btn-secondary btn-sm w-100">Fetch Index OHLC</button>
+        </div>
+        <div class="col-md-2">
+            <button id="defineBasketBtn" class="btn btn-info btn-sm w-100" disabled>Define Basket</button>
+        </div>
+         <div class="col-md-2">
+            <button id="clearStateBtn" class="btn btn-warning btn-sm w-100" title="Clear backend state and logs">Clear Backend State</button>
+        </div>
+         <div class="col-md-2">
+            <button id="clearLogsBtn" class="btn btn-secondary btn-sm w-100" title="Clear only frontend logs">Clear FE Logs</button>
+        </div>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div id="loadingIndicator" class="text-center mb-2">
+        <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+        <span>Loading data...</span>
+    </div>
+
+    <!-- Index LTP & Status Section -->
+    <div class="row mb-2">
+        <div class="col-md-5">
+            <div class="status-section">
+                <h6>Index: <span id="currentIndexName">-</span> | LTP: <span id="indexLtp" class="fw-bold">-</span> <small id="indexLtpTimestamp" class="text-muted"></small> <small>(ATM: <span id="atmStrikeDisplay">-</span>)</small></h6>
+                <div class="ltp-info-text">
+                    Day Low: <span id="indexLow" class="fw-bold text-danger">-</span> | Day High: <span id="indexHigh" class="fw-bold text-success">-</span>
+                </div>
+                <div id="ltpIndicatorContainer" style="display: none;">
+                    <div class="ltp-indicator-bar">
+                        <div id="ltpMarker" class="ltp-marker" style="left: 50%;"></div>
+                    </div>
+                </div>
+                <!-- Status updated via polling -->
+                <h6>Monitoring Status: <span id="monitoringStatus" class="fw-bold info-text">Idle</span></h6>
+                <h6>Order Status: <span id="orderStatus" class="fw-bold info-text">Basket Not Defined</span></h6>
+                <div>Defined Basket: <span id="definedBasketCount">0</span> legs</div>
+                <div id="definedBasketDisplay" class="basket-display">No basket defined. Select options and click "Define Basket".</div>
+            </div>
+        </div>
+        <div class="col-md-7">
+            <div class="status-section">
+                <h6>Triggers & Monitoring Controls</h6>
+                <div class="row g-2 align-items-end">
+                    <div class="col">
+                        <label for="entryPrice" class="form-label form-label-sm">Entry Price (Index <=):</label>
+                        <input type="number" id="entryPrice" class="form-control form-control-sm" placeholder="e.g. 22000" step="0.05" disabled>
+                    </div>
+                    <div class="col">
+                        <label for="stopLossPrice" class="form-label form-label-sm">Stop Loss (Index <=):</label>
+                        <input type="number" id="stopLossPrice" class="form-control form-control-sm" placeholder="e.g. 21950" step="0.05" disabled>
+                    </div>
+                    <div class="col">
+                        <label for="targetPrice" class="form-label form-label-sm">Target Price (Index >=):</label>
+                        <input type="number" id="targetPrice" class="form-control form-control-sm" placeholder="e.g. 22100" step="0.05" disabled>
+                    </div>
+                    <div class="col-auto">
+                        <button id="startMonitoringBtn" class="btn btn-success btn-sm" disabled>Start Monitoring</button>
+                    </div>
+                    <div class="col-auto">
+                        <button id="stopMonitoringBtn" class="btn btn-danger btn-sm" disabled>Stop Monitoring</button>
+                    </div>
+                </div>
+                <!-- Info text remains similar -->
+                 <small class="d-block mt-1 order-info">Entry: BUY basket if Index LTP <= Entry Price. SL/Target: SELL basket if Index LTP hits levels.</small>
+                 <small class="d-block mt-1 order-info">BUY Limit = LTP@Def + Buffer | SELL Limit = Current LTP - Buffer (Buffers set on Backend)</small>
+                 <small class="d-block mt-1 order-info text-muted">Index LTP/Triggers based on daily OHLC 'Close' (fetched by Backend).</small>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Combined Option Chain Table -->
+    <div class="row">
+        <div class="col-12">
+            <p class="order-info mb-1">Select options below to include in the basket:</p>
+            <div class="table-container">
+                <table class="table table-sm table-striped table-bordered table-hover">
+                    <thead class="table-light">
+                    <tr>
+                        <th class="call-bg checkbox-col">Buy CE</th> <th class="call-bg">Delta</th> <th class="call-bg">IV</th> <th class="call-bg">OI</th> <th class="call-bg">Volume</th> <th class="call-bg">LTP</th>
+                        <th class="strike-col">Strike</th>
+                        <th class="put-bg">LTP</th> <th class="put-bg">Volume</th> <th class="put-bg">OI</th> <th class="put-bg">IV</th> <th class="put-bg">Delta</th> <th class="put-bg checkbox-col">Buy PE</th>
+                    </tr>
+                    </thead>
+                    <tbody id="optionChainTableBody">
+                    <tr><td colspan="13" class="text-center">Select Index/Expiry and Fetch Chain.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Logs -->
+    <div class="row mt-3">
+        <div class="col">
+            <h6>Frontend Logs</h6>
+            <div id="logs" class="log-area"></div>
+        </div>
+    </div>
+
+</div> <!-- /container-fluid -->
+
+<!-- Bootstrap Bundle JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>
+
+<script>
+    // --- Configuration ---
+    const BACKEND_API_BASE_URL = ''; // Relative URL for same origin
+    const POLLING_INTERVAL_MS = 300000; // Poll backend status every 3 seconds
+    const NUM_STRIKES_SIDE = 10; // Kept for frontend display filtering
+
+    // --- Globals ---
+    let currentLotSize = 75; // Updated based on selection
+    let currentInstrumentKey = null; // Index instrument key
+    let currentIndexName = 'NIFTY 50';
+    let pollingIntervalId = null;
+    let currentBackendState = {}; // Store latest state from backend
+
+    // --- UI Elements ---
+    const backendStatusEl = document.getElementById('backendStatus');
+    const indexSelectEl = document.getElementById('indexSelect');
+    const expiryDateEl = document.getElementById('expiryDate');
+    const quantityLotsEl = document.getElementById('quantityLots');
+    const fetchChainBtn = document.getElementById('fetchChainBtn');
+    const defineBasketBtn = document.getElementById('defineBasketBtn');
+    const clearLogsBtn = document.getElementById('clearLogsBtn');
+    const clearStateBtn = document.getElementById('clearStateBtn'); // New button
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const currentIndexNameEl = document.getElementById('currentIndexName');
+    const indexLtpEl = document.getElementById('indexLtp');
+    const indexLtpTimestampEl = document.getElementById('indexLtpTimestamp');
+    const indexHighEl = document.getElementById('indexHigh');
+    const indexLowEl = document.getElementById('indexLow');
+    const ltpIndicatorContainerEl = document.getElementById('ltpIndicatorContainer');
+    const ltpMarkerEl = document.getElementById('ltpMarker');
+    const atmStrikeDisplayEl = document.getElementById('atmStrikeDisplay');
+    const monitoringStatusEl = document.getElementById('monitoringStatus');
+    const orderStatusEl = document.getElementById('orderStatus');
+    const definedBasketCountEl = document.getElementById('definedBasketCount');
+    const definedBasketDisplayEl = document.getElementById('definedBasketDisplay');
+    const entryPriceEl = document.getElementById('entryPrice');
+    const stopLossPriceEl = document.getElementById('stopLossPrice');
+    const targetPriceEl = document.getElementById('targetPrice');
+    const startMonitoringBtn = document.getElementById('startMonitoringBtn');
+    const stopMonitoringBtn = document.getElementById('stopMonitoringBtn');
+    const optionChainTableBody = document.getElementById('optionChainTableBody');
+    const logsEl = document.getElementById('logs');
+    const fetchOhlcBtn = document.getElementById('fetchOhlcBtn');
+
+    // --- Logging Helper ---
+    function logMessage(type, ...messages) {
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = document.createElement('div');
+        const processedMessages = messages.map(m => typeof m === 'object' ? JSON.stringify(m) : m);
+        logEntry.innerHTML = `<strong>[${timestamp} ${type}]</strong>: ${processedMessages.join(' ')}`;
+        if (type === 'ERROR') logEntry.className = 'error-text';
+        else if (type === 'WARN') logEntry.className = 'warn-text';
+        else if (type === 'SUCCESS') logEntry.className = 'success-text';
+        else logEntry.className = 'info-text';
+        logsEl.appendChild(logEntry);
+        logsEl.scrollTop = logsEl.scrollHeight;
+    }
+
+    // --- Backend API Communication ---
+    async function callBackendApi(endpoint, method = 'GET', body = null) {
+        const url = `${BACKEND_API_BASE_URL}/api${endpoint}`;
+        const headers = { 'Accept': 'application/json' };
+        const requestOptions = { method: method, headers: headers };
+
+        if (method === 'POST' || method === 'PUT') {
+            headers['Content-Type'] = 'application/json';
+            if (body) requestOptions.body = JSON.stringify(body);
+        }
+
+        logMessage('REQUEST', `${method} ${url}`, body ? JSON.stringify(body) : '');
+        setLoading(true); // Start loading indicator
+
+        try {
+            const response = await fetch(url, requestOptions);
+            // Try to parse JSON first, handle non-JSON gracefully
+            let data;
+            const contentType = response.headers.get("content-type");
+            if (contentType && contentType.indexOf("application/json") !== -1) {
+                 data = await response.json();
+                 logMessage(response.ok ? 'RESPONSE' : 'ERROR', `${response.status} ${response.statusText}`, data);
+            } else {
+                 data = await response.text(); // Get text for non-JSON or errors
+                 logMessage(response.ok ? 'RESPONSE' : 'ERROR', `${response.status} ${response.statusText}`, data);
+                 // If it wasn't JSON but the status is OK, maybe it's unexpected success?
+                 if (response.ok) {
+                    // Or maybe it was supposed to be JSON? Treat as error for API calls.
+                    throw new Error(`Received non-JSON response: ${data}`);
+                 } else {
+                     // If status is not OK and not JSON, throw error with text content
+                     throw new Error(data || `HTTP Error ${response.status}`);
+                 }
+            }
+
+
+            if (!response.ok) {
+                // Error message might be in the parsed JSON or fallback to status text
+                const errorMsg = data?.error || data?.message || `HTTP Error ${response.status}`;
+                throw new Error(errorMsg);
+            }
+            return data; // Contains { status: 'success', data: ... } or similar from backend
+        } catch (error) {
+            logMessage('ERROR', `API Call Failed: ${method} ${url}: ${error.message}`);
+            backendStatusEl.textContent = `Backend Error: ${error.message}`;
+            backendStatusEl.className = 'alert alert-danger py-2';
+            // Don't re-throw here, let the caller handle UI updates on error if needed
+            // Returning null indicates failure to the caller
+            return null;
+        } finally {
+            setLoading(false); // Stop loading indicator regardless of outcome
+        }
+    }
+
+    // --- UI Update Functions ---
+    function setLoading(isLoading) {
+        loadingIndicator.style.display = isLoading ? 'flex' : 'none';
+        // Simple disabling during load - polling will set final state
+        const buttonsToDisable = [
+            fetchChainBtn, defineBasketBtn, fetchOhlcBtn,
+            startMonitoringBtn, stopMonitoringBtn, clearStateBtn
+        ];
+        buttonsToDisable.forEach(btn => { if(btn) btn.disabled = isLoading; });
+    }
+
+    function updateLtpIndicator(low, high, currentLtp) {
+         if (low === null || high === null || currentLtp === null || isNaN(low) || isNaN(high) || isNaN(currentLtp) || high <= low) { // Added high <= low check
+            ltpIndicatorContainerEl.style.display = 'none';
+            return;
+         }
+         const range = high - low;
+         let percentage = 50; // Default if range is zero or invalid
+         if (range > 0) {
+             percentage = ((currentLtp - low) / range) * 100;
+         }
+         percentage = Math.max(0, Math.min(100, percentage)); // Clamp
+         ltpMarkerEl.style.left = `${percentage}%`;
+         ltpIndicatorContainerEl.style.display = 'block';
+    }
+
+    function formatNumber(value, decimals = 2, useLocale = false) {
+        const num = parseFloat(value);
+        if (value === null || value === undefined || isNaN(num)) return 'N/A';
+        const fixedNum = num.toFixed(decimals);
+        return useLocale ? parseFloat(fixedNum).toLocaleString('en-IN') : fixedNum;
+    }
+
+    function displayCombinedOptionsTable(processedStrikes, isMonitoring) {
+        optionChainTableBody.innerHTML = '';
+        if (!processedStrikes || processedStrikes.length === 0) {
+            optionChainTableBody.innerHTML = '<tr><td colspan="13" class="text-center">No options data to display.</td></tr>';
+            return;
+        }
+
+        processedStrikes.forEach(strike => {
+            const row = document.createElement('tr');
+            if (strike.is_atm) row.classList.add('strike-highlight');
+
+            const call = strike.call || {};
+            const put = strike.put || {};
+
+            const cLtp = formatNumber(call.ltp, 2), cVol = formatNumber(call.volume, 0, true), cOI = formatNumber(call.oi, 0, true), cIV = formatNumber(call.iv, 2), cDelta = formatNumber(call.delta, 3);
+            const pLtp = formatNumber(put.ltp, 2), pVol = formatNumber(put.volume, 0, true), pOI = formatNumber(put.oi, 0, true), pIV = formatNumber(put.iv, 2), pDelta = formatNumber(put.delta, 3);
+
+            const cInstToken = call.instrument_token || '';
+            const pInstToken = put.instrument_token || '';
+            const cLtpRaw = call.ltp ?? '';
+            const pLtpRaw = put.ltp ?? '';
+
+            // Disable checkbox if monitoring is active (based on backend state)
+            const checkboxDisabled = isMonitoring ? 'disabled' : '';
+
+            row.innerHTML = `
+                <td class="call-bg checkbox-col">${cInstToken ? `<input type="checkbox" class="option-select" data-instrument-token="${cInstToken}" data-type="CE" data-ltp="${cLtpRaw}" ${checkboxDisabled}>` : ''}</td>
+                <td class="call-bg">${cDelta}</td><td class="call-bg">${cIV}</td><td class="call-bg">${cOI}</td><td class="call-bg">${cVol}</td><td class="call-bg">${cLtp}</td>
+                <td class="strike-col">${formatNumber(strike.strike_price, 2)}</td>
+                <td class="put-bg">${pLtp}</td><td class="put-bg">${pVol}</td><td class="put-bg">${pOI}</td><td class="put-bg">${pIV}</td><td class="put-bg">${pDelta}</td>
+                <td class="put-bg checkbox-col">${pInstToken ? `<input type="checkbox" class="option-select" data-instrument-token="${pInstToken}" data-type="PE" data-ltp="${pLtpRaw}" ${checkboxDisabled}>` : ''}</td>
+            `;
+            optionChainTableBody.appendChild(row);
+        });
+    }
+
+     function processChainDataForDisplay(strikeDataArray, indexLtpValue) {
+        atmStrikeDisplayEl.textContent = '-';
+        if (!strikeDataArray || strikeDataArray.length === 0 || indexLtpValue === null || indexLtpValue === undefined) {
+            logMessage('WARN', 'Cannot process options display: Invalid chain data or index LTP.');
+            return { processedStrikes: [], atmStrike: null };
+        }
+
+        try {
+            const sortedStrikes = strikeDataArray
+                .filter(d => typeof d.strike_price === 'number')
+                .sort((a, b) => a.strike_price - b.strike_price);
+
+            if (sortedStrikes.length === 0) throw new Error('No valid strikes found.');
+
+            let atmStrike = 0, atmIndex = -1, minDiff = Infinity;
+            sortedStrikes.forEach((d, i) => {
+                const diff = Math.abs(d.strike_price - indexLtpValue);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    atmStrike = d.strike_price;
+                    atmIndex = i;
+                }
+            });
+
+            if (atmIndex === -1) { // Fallback
+                atmStrike = sortedStrikes[Math.floor(sortedStrikes.length / 2)].strike_price;
+                atmIndex = sortedStrikes.findIndex(d => d.strike_price === atmStrike);
+            }
+             logMessage('INFO', `Processing display for Index LTP: ${indexLtpValue}, ATM Strike: ${atmStrike}`);
+            atmStrikeDisplayEl.textContent = formatNumber(atmStrike, 0);
+
+            const startIndex = Math.max(0, atmIndex - NUM_STRIKES_SIDE);
+            const endIndex = Math.min(sortedStrikes.length, atmIndex + NUM_STRIKES_SIDE + 1);
+            const selectedStrikesData = sortedStrikes.slice(startIndex, endIndex);
+
+            const processedStrikes = [];
+            const getOptionDetails = (optData) => {
+                 if (!optData || !optData.instrument_key) return null;
+                 const marketData = optData.market_data || {};
+                 const greeks = optData.option_greeks || {};
+                 return {
+                     instrument_token: optData.instrument_key,
+                     ltp: marketData.ltp, volume: marketData.volume, oi: marketData.oi,
+                     iv: greeks.iv, delta: greeks.delta
+                 };
+            };
+
+            selectedStrikesData.forEach(d => {
+                processedStrikes.push({
+                    strike_price: d.strike_price,
+                    is_atm: d.strike_price === atmStrike,
+                    call: getOptionDetails(d.call_options),
+                    put: getOptionDetails(d.put_options)
+                });
+            });
+            return { processedStrikes, atmStrike };
+
+        } catch (error) {
+            logMessage('ERROR', `Error processing options for display: ${error.message}`);
+             optionChainTableBody.innerHTML = `<tr class="error-text"><td colspan="13" class="text-center">Error processing options: ${error.message}</td></tr>`;
+            return { processedStrikes: [], atmStrike: null };
+        }
+    }
+
+    // --- Polling Function ---
+    async function pollBackendStatus() {
+        let response = null; // Define response outside try
+        try {
+            // Use GET for status polling - Explicitly pass GET
+            response = await callBackendApi('/status', 'GET');
+
+            // If callBackendApi returns null on error, stop processing
+            if (!response) {
+                 logMessage('ERROR', 'Polling failed to get backend status response.');
+                 // Optionally set UI to disconnected state?
+                 backendStatusEl.textContent = `Backend Connection Error. Retrying...`;
+                 backendStatusEl.className = 'alert alert-danger py-2';
+                 return; // Stop this poll attempt
+            }
+
+            currentBackendState = response.data || {}; // Store the latest state
+
+            // Update Backend Connection Status
+            backendStatusEl.textContent = `Backend Connected. Auth: ${currentBackendState.auth_status || 'Unknown'}.`;
+            backendStatusEl.className = `alert ${currentBackendState.auth_status === 'OK' ? 'alert-success' : 'alert-warning'} py-2`;
+
+            // Update Index Info
+            const indexData = currentBackendState.index_data;
+            if (indexData) {
+                const timestamp = indexData.timestamp ? new Date(indexData.timestamp).toLocaleTimeString('en-US', { hour12: false }) : '';
+                indexLtpEl.textContent = formatNumber(indexData.ltp, 2);
+                indexLtpTimestampEl.textContent = timestamp ? `(@${timestamp})` : '';
+                indexHighEl.textContent = formatNumber(indexData.high, 2);
+                indexLowEl.textContent = formatNumber(indexData.low, 2);
+                updateLtpIndicator(indexData.low, indexData.high, indexData.ltp);
+                if (currentBackendState.atm_strike) { // Update ATM from backend state if available
+                    atmStrikeDisplayEl.textContent = formatNumber(currentBackendState.atm_strike, 0);
+                }
+            } else {
+                indexLtpEl.textContent = '-'; indexLtpTimestampEl.textContent = ''; indexHighEl.textContent = '-'; indexLowEl.textContent = '-'; ltpIndicatorContainerEl.style.display = 'none'; atmStrikeDisplayEl.textContent = '-';
+            }
+
+            // Update Monitoring and Order Status
+            monitoringStatusEl.textContent = currentBackendState.monitoring_status_msg || 'Unknown';
+            monitoringStatusEl.className = `fw-bold ${currentBackendState.monitoring_status_class || 'info-text'}`;
+            orderStatusEl.textContent = currentBackendState.order_status_msg || 'Unknown';
+            orderStatusEl.className = `fw-bold ${currentBackendState.order_status_class || 'info-text'}`;
+
+            // Update Defined Basket Display
+            const basket = currentBackendState.defined_basket || [];
+            definedBasketCountEl.textContent = basket.length;
+            if (basket.length > 0) {
+                let basketHtml = '';
+                basket.forEach((item, index) => {
+                    basketHtml += `<div>${index + 1}. ${item.instrument_token} (${item.type}) Qty: ${item.quantity} ${item.ltp_at_definition !== null ? `(LTP@Def: ${formatNumber(item.ltp_at_definition)})` : ''}</div>`;
+                });
+                definedBasketDisplayEl.innerHTML = basketHtml;
+            } else {
+                definedBasketDisplayEl.innerHTML = 'No basket defined by backend.';
+            }
+
+            // Restore Trigger Prices if available and not monitoring
+            const isMonitoring = currentBackendState.is_monitoring_active || false;
+            const triggers = currentBackendState.trigger_prices || {};
+            // Only update inputs if NOT monitoring to avoid overwriting during active state
+            if (!isMonitoring) {
+                 entryPriceEl.value = triggers.entry || '';
+                 stopLossPriceEl.value = triggers.sl || '';
+                 targetPriceEl.value = triggers.target || '';
+            }
+
+
+            // Update Button and Input States based on backend state
+            const isAuthenticated = currentBackendState.auth_status === 'OK';
+            const isBasketDefined = basket.length > 0;
+            const chainDataExists = optionChainTableBody.rows.length > 0 && !(optionChainTableBody.rows[0].cells.length === 1 && optionChainTableBody.rows[0].cells[0].textContent.includes("Fetch Chain")); // More robust check
+
+
+            fetchChainBtn.disabled = isMonitoring || !isAuthenticated;
+            fetchOhlcBtn.disabled = isMonitoring || !isAuthenticated;
+            defineBasketBtn.disabled = isMonitoring || !isAuthenticated || !chainDataExists; // Need chain to define
+            clearStateBtn.disabled = isMonitoring; // Disable clear state while monitoring is active
+
+            entryPriceEl.disabled = isMonitoring || !isBasketDefined;
+            stopLossPriceEl.disabled = isMonitoring || !isBasketDefined;
+            targetPriceEl.disabled = isMonitoring || !isBasketDefined;
+            quantityLotsEl.disabled = isMonitoring || isBasketDefined; // Disable lots if basket defined or monitoring
+
+            startMonitoringBtn.disabled = isMonitoring || !isBasketDefined || !isAuthenticated; // Remove the check for existing triggers.entry
+            // stopMonitoringBtn.disabled = !isMonitoring || !isAuthenticated;
+
+            // Update checkboxes in the table if it exists
+            optionChainTableBody.querySelectorAll('.option-select').forEach(cb => cb.disabled = isMonitoring);
+
+        } catch (error) {
+            // This catch is primarily for JS errors *within* the pollBackendStatus function itself,
+            // as callBackendApi handles fetch errors internally and returns null.
+            logMessage('ERROR', 'JavaScript error during polling update:', error.message);
+            // Avoid setting backend status here as it might be a frontend issue
+        }
+    }
+
+    // --- Event Handlers ---
+    async function handleFetchChain(event) {
+        event.preventDefault(); // <-- PREVENT DEFAULT BROWSER ACTION
+
+        const selectedOptionEl = indexSelectEl.options[indexSelectEl.selectedIndex];
+        const instKey = selectedOptionEl.dataset.instrumentKey;
+        const expiry = expiryDateEl.value;
+
+        if (!instKey || !expiry) {
+            alert('Please select Index and Expiry Date.');
+            return;
+        }
+
+        currentInstrumentKey = instKey;
+        currentIndexName = selectedOptionEl.text;
+        currentLotSize = parseInt(selectedOptionEl.dataset.lotSize) || 75;
+        currentIndexNameEl.textContent = currentIndexName;
+
+        optionChainTableBody.innerHTML = `<tr><td colspan="13" class="text-center">Fetching chain data...</td></tr>`;
+        indexLtpEl.textContent = 'Fetching...'; indexLtpTimestampEl.textContent = ''; indexHighEl.textContent = '...'; indexLowEl.textContent = '...'; ltpIndicatorContainerEl.style.display = 'none'; atmStrikeDisplayEl.textContent = '-';
+        resetBasketAndTriggersUI();
+
+        // --- Call Backend ---
+        const response = await callBackendApi('/chain', 'POST', {
+            instrument_key: instKey,
+            expiry_date: expiry
+        });
+
+        // --- Process Response ---
+        if (response && response.status === 'success' && response.data) {
+            const chainData = response.data.options_chain;
+            const indexData = response.data.index_data;
+
+            if (indexData) {
+                 const timestamp = indexData.timestamp ? new Date(indexData.timestamp).toLocaleTimeString('en-US', { hour12: false }) : '';
+                 indexLtpEl.textContent = formatNumber(indexData.ltp, 2);
+                 indexLtpTimestampEl.textContent = timestamp ? `(@${timestamp})` : '';
+                 indexHighEl.textContent = formatNumber(indexData.high, 2);
+                 indexLowEl.textContent = formatNumber(indexData.low, 2);
+                 updateLtpIndicator(indexData.low, indexData.high, indexData.ltp);
+
+                 const { processedStrikes } = processChainDataForDisplay(chainData, indexData.ltp);
+                 const isMonitoring = currentBackendState?.is_monitoring_active || false;
+                 displayCombinedOptionsTable(processedStrikes, isMonitoring);
+            } else {
+                 logMessage('WARN', 'Chain fetched, but missing index data in response.');
+                 optionChainTableBody.innerHTML = `<tr><td colspan="13" class="text-center">Chain data loaded, but Index LTP unavailable.</td></tr>`;
+            }
+
+            logMessage('SUCCESS', `Option chain fetched successfully for ${currentIndexName} ${expiry}`);
+            // Let polling handle button state update
+            // defineBasketBtn.disabled = currentBackendState?.is_monitoring_active || false;
+        } else {
+            // Error logged by callBackendApi
+            optionChainTableBody.innerHTML = `<tr class="error-text"><td colspan="13" class="text-center">Failed to load option chain. Check logs.</td></tr>`;
+            defineBasketBtn.disabled = true; // Explicitly disable on error
+        }
+    }
+
+    async function handleFetchOhlc(event) {
+        event.preventDefault(); // <-- PREVENT DEFAULT BROWSER ACTION
+
+        const selectedOptionEl = indexSelectEl.options[indexSelectEl.selectedIndex];
+        const instKey = selectedOptionEl.dataset.instrumentKey;
+        if (!instKey) { alert('Please select an Index.'); return; }
+
+        const response = await callBackendApi('/ohlc', 'POST', { instrument_key: instKey });
+
+        if (response && response.status === 'success' && response.data) {
+             const indexData = response.data;
+             const timestamp = indexData.timestamp ? new Date(indexData.timestamp).toLocaleTimeString('en-US', { hour12: false }) : '';
+             indexLtpEl.textContent = formatNumber(indexData.ltp, 2);
+             indexLtpTimestampEl.textContent = timestamp ? `(@${timestamp})` : '';
+             indexHighEl.textContent = formatNumber(indexData.high, 2);
+             indexLowEl.textContent = formatNumber(indexData.low, 2);
+             updateLtpIndicator(indexData.low, indexData.high, indexData.ltp);
+             logMessage('SUCCESS', `Manual OHLC fetch successful for ${selectedOptionEl.text}.`);
+        } else {
+             // Error logged by callBackendApi
+             indexLtpEl.textContent = 'Error'; indexLtpTimestampEl.textContent = ''; indexHighEl.textContent = 'Error'; indexLowEl.textContent = 'Error'; ltpIndicatorContainerEl.style.display = 'none';
+        }
+    }
+
+    async function handleDefineBasket(event) {
+        event.preventDefault(); // <-- PREVENT DEFAULT BROWSER ACTION
+
+        const selectedCheckboxes = optionChainTableBody.querySelectorAll('.option-select:checked');
+        if (selectedCheckboxes.length === 0) { alert(`Please select at least one option.`); return; }
+        const lots = parseInt(quantityLotsEl.value);
+        if (isNaN(lots) || lots < 1) { alert('Please enter valid lots (>=1).'); return; }
+
+        const basketItems = [];
+        let hasInvalidLtp = false;
+        selectedCheckboxes.forEach(checkbox => {
+            const ltpString = checkbox.dataset.ltp;
+            const currentLtp = parseFloat(ltpString);
+            const instrumentToken = checkbox.dataset.instrumentToken;
+            if (isNaN(currentLtp) || ltpString === '') {
+                logMessage('WARN', `Selected option ${instrumentToken} has invalid LTP "${ltpString}". Definition might fail on backend.`);
+                hasInvalidLtp = true;
+            }
+            basketItems.push({
+                instrument_token: instrumentToken,
+                type: checkbox.dataset.type,
+                ltp_at_definition: isNaN(currentLtp) ? null : currentLtp
+            });
+        });
+
+        if (hasInvalidLtp && !confirm("One or more selected options have invalid/missing LTP. Backend might reject this definition. Continue?")) {
+             return;
+        }
+
+        const response = await callBackendApi('/define_basket', 'POST', {
+             basket: basketItems,
+             lots: lots,
+             lot_size: currentLotSize
+         });
+
+         if (response && response.status === 'success') {
+             logMessage('SUCCESS', 'Basket definition sent to backend.');
+             // UI will update via next poll
+             await pollBackendStatus(); // Trigger immediate poll for faster UI update
+         } else {
+             // Error logged by callBackendApi or specific error message from backend
+             const errorMsg = response?.error || "Define Basket failed. Check logs.";
+             logMessage('ERROR', `Define Basket failed: ${errorMsg}`);
+             alert(`Define Basket Failed: ${errorMsg}`);
+         }
+    }
+
+    function validateTriggerPrices() {
+        // Keep this function as is, only performs local validation
+        const entry = parseFloat(entryPriceEl.value);
+        const sl = parseFloat(stopLossPriceEl.value);
+        const target = parseFloat(targetPriceEl.value);
+
+        if (isNaN(entry) || isNaN(sl) || isNaN(target)) { alert('Please enter valid numbers for Entry, Stop Loss, and Target prices.'); return null; }
+        if (entry <= 0 || sl <= 0 || target <= 0) { alert('Trigger prices must be positive.'); return null; }
+        if (sl >= entry) { alert('Stop Loss price must be less than Entry Price.'); return null; }
+        if (target <= entry) { alert('Target Price must be greater than Entry Price.'); return null; }
+        return { entry, sl, target };
+    }
+
+    async function handleStartMonitoring(event) {
+        event.preventDefault(); // <-- PREVENT DEFAULT BROWSER ACTION
+
+        const triggerPrices = validateTriggerPrices();
+        if (!triggerPrices) return;
+
+        logMessage('INFO', 'Requesting backend to start monitoring...');
+        const response = await callBackendApi('/start_monitoring', 'POST', {
+            entry_price: triggerPrices.entry,
+            stop_loss_price: triggerPrices.sl,
+            target_price: triggerPrices.target
+        });
+
+        if (response && response.status === 'success') {
+             logMessage('SUCCESS', 'Backend acknowledged start monitoring request.');
+             await pollBackendStatus(); // Trigger immediate poll
+        } else {
+             const errorMsg = response?.error || 'Backend failed to start monitoring.';
+             logMessage('ERROR', `Start Monitoring failed: ${errorMsg}`);
+             alert(`Start Monitoring Failed: ${errorMsg}`);
+        }
+    }
+
+    async function handleStopMonitoring(event) {
+        event.preventDefault(); // <-- PREVENT DEFAULT BROWSER ACTION
+
+        logMessage('WARN', 'Requesting backend to stop monitoring...');
+        const response = await callBackendApi('/stop_monitoring', 'POST');
+
+         if (response && response.status === 'success') {
+             logMessage('SUCCESS', 'Backend acknowledged stop monitoring request.');
+             await pollBackendStatus(); // Trigger immediate poll
+        } else {
+             const errorMsg = response?.error || 'Backend failed to stop monitoring.';
+             logMessage('ERROR', `Stop Monitoring failed: ${errorMsg}`);
+             alert(`Stop Monitoring Failed: ${errorMsg}`);
+        }
+    }
+
+     async function handleClearState(event) {
+        event.preventDefault(); // <-- PREVENT DEFAULT BROWSER ACTION
+
+        if (!confirm("This will clear the entire state on the backend (basket, triggers, status) and stop monitoring. Are you sure?")) {
+            return;
+        }
+        logMessage('WARN', 'Requesting backend to clear its state...');
+        const response = await callBackendApi('/clear_state', 'POST');
+
+         if (response && response.status === 'success') {
+             logMessage('SUCCESS', 'Backend state cleared successfully.');
+             // Clear local logs and UI elements that aren't updated by polling status
+             logsEl.innerHTML = '';
+             logMessage('INFO', 'Frontend logs cleared.');
+             resetBasketAndTriggersUI();
+             optionChainTableBody.innerHTML = '<tr><td colspan="13" class="text-center">State cleared. Fetch new chain.</td></tr>';
+             await pollBackendStatus(); // Trigger immediate poll to get fresh state
+        } else {
+             const errorMsg = response?.error || 'Backend failed to clear state.';
+             logMessage('ERROR', `Clear State failed: ${errorMsg}`);
+             alert(`Clear State Failed: ${errorMsg}`);
+        }
+    }
+
+    function clearLogs(event) {
+         if(event) event.preventDefault(); // Good practice if called from button
+        logsEl.innerHTML = '';
+        logMessage('INFO', 'Frontend logs cleared.');
+    }
+
+    function resetBasketAndTriggersUI() {
+        definedBasketCountEl.textContent = '0';
+        definedBasketDisplayEl.innerHTML = 'No basket defined.';
+        entryPriceEl.value = '';
+        stopLossPriceEl.value = '';
+        targetPriceEl.value = '';
+        quantityLotsEl.value = '1';
+        // Let polling handle disabling/enabling based on actual backend state
+    }
+
+
+    // --- Initialization ---
+    document.addEventListener('DOMContentLoaded', () => {
+         // Set default expiry
+         const today = new Date(); let expiryDate = new Date(today); const dayOfWeek = today.getDay();
+         let daysUntilThursday; if (dayOfWeek <= 4) { daysUntilThursday = 4 - dayOfWeek; } else { daysUntilThursday = 4 - dayOfWeek + 7; }
+         if (daysUntilThursday <= 0) daysUntilThursday += 7;
+         expiryDate.setDate(today.getDate() + daysUntilThursday);
+         expiryDateEl.value = expiryDate.toISOString().split('T')[0];
+
+         // Set initial index globals
+         const selectedOptionEl = indexSelectEl.options[indexSelectEl.selectedIndex];
+         currentLotSize = parseInt(selectedOptionEl.dataset.lotSize) || 75;
+         currentIndexName = selectedOptionEl.text;
+         currentInstrumentKey = selectedOptionEl.dataset.instrumentKey;
+         currentIndexNameEl.textContent = currentIndexName;
+
+         // Setup Event Listeners (pass the event object)
+         fetchChainBtn.addEventListener('click', (event) => handleFetchChain(event));
+         fetchOhlcBtn.addEventListener('click', (event) => handleFetchOhlc(event));
+         defineBasketBtn.addEventListener('click', (event) => handleDefineBasket(event));
+         startMonitoringBtn.addEventListener('click', (event) => handleStartMonitoring(event));
+         stopMonitoringBtn.addEventListener('click', (event) => handleStopMonitoring(event));
+         clearLogsBtn.addEventListener('click', (event) => clearLogs(event));
+         clearStateBtn.addEventListener('click', (event) => handleClearState(event));
+
+         indexSelectEl.addEventListener('change', (event) => {
+             const selectedOptionEl = event.target.options[event.target.selectedIndex];
+             currentLotSize = parseInt(selectedOptionEl.dataset.lotSize) || 75;
+             currentIndexName = selectedOptionEl.text;
+             currentInstrumentKey = selectedOptionEl.dataset.instrumentKey;
+             currentIndexNameEl.textContent = currentIndexName;
+             optionChainTableBody.innerHTML = '<tr><td colspan="13" class="text-center">Index changed. Fetch new chain.</td></tr>';
+             resetBasketAndTriggersUI();
+             defineBasketBtn.disabled = true;
+             logMessage('INFO', `Index changed to ${currentIndexName}. Lot Size: ${currentLotSize}. Fetch new chain.`);
+         });
+
+         expiryDateEl.addEventListener('change', () => {
+             optionChainTableBody.innerHTML = '<tr><td colspan="13" class="text-center">Expiry changed. Fetch new chain.</td></tr>';
+             resetBasketAndTriggersUI();
+             defineBasketBtn.disabled = true;
+             logMessage('INFO', `Expiry date changed. Fetch new chain.`);
+         });
+
+        // Start polling
+        pollBackendStatus(); // Initial poll
+        // if (pollingIntervalId) clearInterval(pollingIntervalId); // Clear previous interval if any
+        // pollingIntervalId = setInterval(pollBackendStatus, POLLING_INTERVAL_MS);
+
+        logMessage('INFO', 'Frontend Initialized. Polling backend status...');
+        logMessage('WARN', 'Ensure Python backend (app.py) is running.');
+    });
+
+</script>
+</body>
+</html>

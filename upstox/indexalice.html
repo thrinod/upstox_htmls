@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alice Blue Option Chain & Trading</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Crypto JS for SHA256 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <style>
+        body { background-color: #f4f6f9; font-size: 0.9rem; }
+        .chain-table th { text-align: center; font-size: 0.8rem; background-color: #343a40; color: white; position: sticky; top: 0; }
+        .chain-table td { text-align: center; vertical-align: middle; }
+        .call-bg { background-color: #e8f5e9; }
+        .put-bg { background-color: #ffebee; }
+        .strike-cell { font-weight: bold; background-color: #e3f2fd; cursor: default; }
+        .clickable { cursor: pointer; text-decoration: underline; color: blue; }
+        .clickable:hover { color: darkblue; }
+        #loadingOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); z-index: 9999; text-align: center; padding-top: 20%; }
+    </style>
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay">
+    <div class="spinner-border text-primary" role="status"></div>
+    <h4 id="loadingText">Processing...</h4>
+</div>
+
+<div class="container-fluid mt-3">
+    <!-- Authentication Section -->
+    <div class="card mb-3" id="authSection">
+        <div class="card-header bg-primary text-white">Alice Blue Login</div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <input type="text" id="userId" class="form-control" placeholder="User ID (e.g., 123456)">
+                </div>
+                <div class="col-md-4">
+                    <input type="password" id="apiKey" class="form-control" placeholder="API Key">
+                </div>
+                <div class="col-md-4">
+                    <button class="btn btn-success w-100" onclick="performLogin()">Login</button>
+                </div>
+            </div>
+            <div class="mt-2 text-danger small" id="loginError"></div>
+        </div>
+    </div>
+
+    <!-- Trading Dashboard (Hidden until login) -->
+    <div id="dashboard" style="display:none;">
+        
+        <!-- Controls -->
+        <div class="card mb-3">
+            <div class="card-body py-2">
+                <div class="row align-items-center">
+                    <div class="col-md-2">
+                        <label>Index</label>
+                        <select id="indexSelect" class="form-select" onchange="updateStrikes()">
+                            <option value="NIFTY">NIFTY</option>
+                            <option value="BANKNIFTY">BANKNIFTY</option>
+                            <option value="SENSEX">SENSEX</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label>Spot Price (Approx)</label>
+                        <input type="number" id="spotPrice" class="form-control" placeholder="e.g. 21500" value="22000">
+                    </div>
+                    <div class="col-md-3">
+                        <label>Expiry Format (for Search)</label>
+                        <input type="text" id="expiryStr" class="form-control" placeholder="e.g. 28 MAR" value="">
+                        <small class="text-muted">Format must match Broker (e.g. '25FEB')</small>
+                    </div>
+                    <div class="col-md-2">
+                        <label>Range (Strikes)</label>
+                        <select id="rangeSelect" class="form-select">
+                            <option value="5">+/- 5</option>
+                            <option value="10">+/- 10</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label>&nbsp;</label>
+                        <button class="btn btn-primary w-100" onclick="loadOptionChain()">Load Option Chain</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Option Chain Table -->
+        <div class="table-responsive" style="height: 70vh; overflow-y: auto;">
+            <table class="table table-bordered table-sm chain-table">
+                <thead>
+                    <tr>
+                        <th colspan="3" class="bg-success">CALLS (CE)</th>
+                        <th class="bg-secondary">STRIKE</th>
+                        <th colspan="3" class="bg-danger">PUTS (PE)</th>
+                    </tr>
+                    <tr>
+                        <th>Buy/Sell</th>
+                        <th>LTP</th>
+                        <th>Symbol</th>
+                        <th>Price</th>
+                        <th>Symbol</th>
+                        <th>LTP</th>
+                        <th>Buy/Sell</th>
+                    </tr>
+                </thead>
+                <tbody id="chainBody">
+                    <tr><td colspan="7">Click 'Load Option Chain' to fetch data.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Order Modal -->
+<div class="modal fade" id="orderModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Place Order</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="orderForm">
+                    <div class="mb-2">
+                        <label>Trading Symbol</label>
+                        <input type="text" id="modalSymbol" class="form-control" readonly>
+                        <input type="hidden" id="modalToken">
+                        <input type="hidden" id="modalExch">
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col">
+                            <label>Transaction Type</label>
+                            <select id="modalTransType" class="form-select">
+                                <option value="BUY">BUY</option>
+                                <option value="SELL">SELL</option>
+                            </select>
+                        </div>
+                        <div class="col">
+                            <label>Order Type</label>
+                            <select id="modalOrderType" class="form-select">
+                                <option value="MKT">Market</option>
+                                <option value="L">Limit</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col">
+                            <label>Quantity</label>
+                            <input type="number" id="modalQty" class="form-control" value="50">
+                        </div>
+                        <div class="col">
+                            <label>Price (if Limit)</label>
+                            <input type="number" id="modalPrice" class="form-control" value="0">
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label>Product Code</label>
+                        <select id="modalPCode" class="form-select">
+                            <option value="MIS">Intraday (MIS)</option>
+                            <option value="NRML">Normal (NRML)</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="submitOrder()">Submit Order</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- CONFIGURATION ---
+    const BASE_URL = "https://ant.aliceblueonline.com/rest/AliceBlueAPIService/api/";
+    let SESSION_ID = "";
+    let USER_ID = "";
+    
+    // Helper: Show/Hide Loader
+    const toggleLoader = (show, text = "Processing...") => {
+        document.getElementById('loadingText').innerText = text;
+        document.getElementById('loadingOverlay').style.display = show ? 'block' : 'none';
+    };
+
+    // --- AUTHENTICATION ---
+    
+    async function performLogin() {
+        USER_ID = document.getElementById('userId').value.trim();
+        const apiKey = document.getElementById('apiKey').value.trim();
+
+        if (!USER_ID || !apiKey) {
+            alert("Please enter User ID and API Key");
+            return;
+        }
+
+        toggleLoader(true, "Getting Encryption Key...");
+
+        try {
+            // 1. Get Encryption Key
+            const encRes = await fetch(`${BASE_URL}customer/getAPIEncpkey`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: USER_ID })
+            });
+            const encData = await encRes.json();
+            
+            if(encData.emsg) throw new Error(encData.emsg);
+            
+            const encKey = encData.encKey; // Adjust based on actual response key if different
+
+            // 2. Generate Hash (SHA256 of UserId + APIKey + EncKey)
+            const rawData = USER_ID + apiKey + encKey;
+            const userDataHash = CryptoJS.SHA256(rawData).toString(CryptoJS.enc.Hex);
+
+            // 3. Get Session ID
+            toggleLoader(true, "Authenticating...");
+            const sessRes = await fetch(`${BASE_URL}customer/getUserSID`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: USER_ID, userData: userDataHash })
+            });
+            const sessData = await sessRes.json();
+
+            if (sessData.stat === "Not_Ok") throw new Error(sessData.emsg);
+
+            SESSION_ID = sessData.sessionID;
+            
+            // Login Success
+            document.getElementById('authSection').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+            alert("Login Successful!");
+
+        } catch (error) {
+            console.error(error);
+            document.getElementById('loginError').innerText = "Error: " + error.message;
+            alert("Login Failed. Check Console. (Note: Possible CORS issue if not running via Proxy)");
+        } finally {
+            toggleLoader(false);
+        }
+    }
+
+    // --- MARKET DATA LOGIC ---
+
+    async function loadOptionChain() {
+        const index = document.getElementById('indexSelect').value;
+        const spotPrice = parseInt(document.getElementById('spotPrice').value);
+        const expiryStr = document.getElementById('expiryStr').value.toUpperCase().trim(); // e.g., "28 MAR"
+        const range = parseInt(document.getElementById('rangeSelect').value);
+        
+        if (!expiryStr) {
+            alert("Please enter an expiry string (e.g., '28 FEB' or '6 MAR') based on Alice Blue symbol naming.");
+            return;
+        }
+
+        toggleLoader(true, "Constructing Chain...");
+        const tbody = document.getElementById('chainBody');
+        tbody.innerHTML = "";
+
+        // Determine step size (Nifty: 50, Banknifty: 100, Sensex: 100)
+        let step = 50;
+        let exchange = "NFO"; // NSE FO
+        if (index === 'SENSEX') { step = 100; exchange = "BFO"; } // BSE FO
+        if (index === 'BANKNIFTY') { step = 100; }
+
+        // Calculate ATM Strike
+        const atmStrike = Math.round(spotPrice / step) * step;
+
+        // Generate Strikes List
+        let strikes = [];
+        for (let i = -range; i <= range; i++) {
+            strikes.push(atmStrike + (i * step));
+        }
+
+        // We need to resolve Token IDs for these strikes. 
+        // Strategy: We will search for symbols using getScripForSearch.
+        // NOTE: This is inefficient (N calls) but necessary without a local Master CSV.
+        
+        let rowData = [];
+
+        for (const strike of strikes) {
+            // Construct Search Query. Format usually: "NIFTY 25000 CE" or "NIFTY 28 FEB 22000 CE"
+            // We'll search broadly then filter.
+            const ceSearch = `${index} ${expiryStr} ${strike} CE`;
+            const peSearch = `${index} ${expiryStr} ${strike} PE`;
+
+            try {
+                // Fetch CE Token
+                const ceTokenObj = await searchScrip(ceSearch, exchange);
+                // Fetch PE Token
+                const peTokenObj = await searchScrip(peSearch, exchange);
+
+                rowData.push({
+                    strike: strike,
+                    ce: ceTokenObj, // { token: '123', symbol: 'NIFTY...', ltp: '...' }
+                    pe: peTokenObj
+                });
+            } catch (e) {
+                console.log("Error fetching strike " + strike, e);
+            }
+        }
+
+        // Now fetch Live Prices (LTP) using scripsMW (Market Watch API)
+        // We compile a list of tokens: "exch|token,exch|token"
+        let scripList = rowData.map(r => {
+            let list = [];
+            if(r.ce) list.push(`${exchange}|${r.ce.token}`);
+            if(r.pe) list.push(`${exchange}|${r.pe.token}`);
+            return list.join(',');
+        }).join(',');
+
+        if(scripList) {
+            try {
+                const quotes = await fetchMarketQuotes(scripList);
+                // Merge quotes into rowData
+                rowData.forEach(row => {
+                    if(row.ce) row.ce.ltp = quotes[`${exchange}|${row.ce.token}`] || '-';
+                    if(row.pe) row.pe.ltp = quotes[`${exchange}|${row.pe.token}`] || '-';
+                });
+            } catch (e) {
+                console.error("Failed to fetch live quotes", e);
+            }
+        }
+
+        renderTable(rowData, exchange);
+        toggleLoader(false);
+    }
+
+    async function searchScrip(query, exchange) {
+        // According to Postman: exchange/getScripForSearch
+        const res = await fetch(`${BASE_URL}exchange/getScripForSearch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol: query, exchange: [exchange] })
+        });
+        const data = await res.json();
+        
+        if (Array.isArray(data) && data.length > 0) {
+            // Return the first match (Simplification)
+            return {
+                token: data[0].token,
+                symbol: data[0].symbol, // Trading Symbol
+                exch: exchange
+            };
+        }
+        return null;
+    }
+
+    async function fetchMarketQuotes(scripListStr) {
+        // According to Postman: marketWatch/scripsMW
+        // Headers: Authorization
+        const res = await fetch(`${BASE_URL}marketWatch/scripsMW`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${USER_ID} ${SESSION_ID}`
+            },
+            body: JSON.stringify({ userId: USER_ID, scripList: scripListStr })
+        });
+        const data = await res.json();
+        
+        // Transform response to map: "EXCH|TOKEN" -> LTP
+        let map = {};
+        if(data.values && Array.isArray(data.values)) {
+            data.values.forEach(item => {
+                // Assuming response structure has 'token' and 'ltp' or 'lp'
+                // NOTE: The JSON doesn't show exact response of scripsMW, assuming standard AB format
+                const key = `${item.exch}|${item.token}`;
+                map[key] = item.ltp; 
+            });
+        }
+        return map;
+    }
+
+    function renderTable(rows, exchange) {
+        const tbody = document.getElementById('chainBody');
+        tbody.innerHTML = "";
+
+        rows.forEach(row => {
+            const tr = document.createElement('tr');
+
+            // CE Data
+            const ceSym = row.ce ? row.ce.symbol : '-';
+            const ceLtp = row.ce ? row.ce.ltp : '-';
+            const ceToken = row.ce ? row.ce.token : '';
+
+            // PE Data
+            const peSym = row.pe ? row.pe.symbol : '-';
+            const peLtp = row.pe ? row.pe.ltp : '-';
+            const peToken = row.pe ? row.pe.token : '';
+
+            tr.innerHTML = `
+                <td class="call-bg clickable" onclick="openOrderModal('${ceSym}', '${ceToken}', '${exchange}', 'BUY')">B</td>
+                <td class="call-bg fw-bold">${ceLtp}</td>
+                <td class="call-bg small">${ceSym}</td>
+                
+                <td class="strike-cell">${row.strike}</td>
+                
+                <td class="put-bg small">${peSym}</td>
+                <td class="put-bg fw-bold">${peLtp}</td>
+                <td class="put-bg clickable" onclick="openOrderModal('${peSym}', '${peToken}', '${exchange}', 'BUY')">B</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // --- ORDER MANAGEMENT ---
+
+    function openOrderModal(symbol, token, exch, type) {
+        if(!token) return;
+        document.getElementById('modalSymbol').value = symbol;
+        document.getElementById('modalToken').value = token;
+        document.getElementById('modalExch').value = exch;
+        document.getElementById('modalTransType').value = type;
+        
+        const modal = new bootstrap.Modal(document.getElementById('orderModal'));
+        modal.show();
+    }
+
+    async function submitOrder() {
+        const symbol = document.getElementById('modalSymbol').value;
+        const token = document.getElementById('modalToken').value;
+        const exch = document.getElementById('modalExch').value;
+        const transType = document.getElementById('modalTransType').value; // BUY/SELL
+        const orderType = document.getElementById('modalOrderType').value; // MKT/L
+        const qty = parseInt(document.getElementById('modalQty').value);
+        const price = document.getElementById('modalPrice').value; // Only if Limit
+        const pCode = document.getElementById('modalPCode').value; // MIS/NRML
+
+        // Payload Construction based on Postman "Place Order"
+        // [ { complexty, discqty, exch, pCode, prctyp, price, qty, ret, symbol_id, trading_symbol, transtype, trigPrice } ]
+        
+        const payload = [{
+            complexty: "regular",
+            discqty: "0",
+            exch: exch,
+            pCode: pCode, // mis or nrml
+            prctyp: orderType, // MKT or L
+            price: orderType === 'MKT' ? "0" : price,
+            qty: qty,
+            ret: "DAY",
+            symbol_id: token,
+            trading_symbol: symbol,
+            transtype: transType,
+            trigPrice: "0" // For Stoploss, but simple order here
+        }];
+
+        toggleLoader(true, "Placing Order...");
+        
+        try {
+            const res = await fetch(`${BASE_URL}placeOrder/executePlaceOrder`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${USER_ID} ${SESSION_ID}`
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            
+            // Check response (Alice Blue usually returns array of results)
+            console.log(data);
+            if(Array.isArray(data) && data[0].stat === "Ok") {
+                alert(`Order Placed Successfully! Order ID: ${data[0].NOrdNo}`);
+                const modal = bootstrap.Modal.getInstance(document.getElementById('orderModal'));
+                modal.hide();
+            } else {
+                alert("Order Failed: " + (data[0]?.emsg || JSON.stringify(data)));
+            }
+
+        } catch (e) {
+            console.error(e);
+            alert("API Error placing order.");
+        } finally {
+            toggleLoader(false);
+        }
+    }
+
+    function updateStrikes() {
+        const index = document.getElementById('indexSelect').value;
+        const spotInput = document.getElementById('spotPrice');
+        if(index === 'NIFTY') spotInput.value = 22000;
+        if(index === 'BANKNIFTY') spotInput.value = 47000;
+        if(index === 'SENSEX') spotInput.value = 72000;
+    }
+
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

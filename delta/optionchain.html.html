@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delta Exchange Option Chain & Order Tool</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <!-- CryptoJS CDN is no longer strictly needed for signature, but keeping it as it's a common lib -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <style>
+        body { padding-top: 15px; padding-bottom: 20px; background-color: #f8f9fa; color: #333;}
+        .container-fluid { max-width: 1200px; margin: auto; background-color: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 0 15px rgba(0, 0, 0, 0.1); }
+        h3 { color: #0056b3; text-align: center; margin-bottom: 25px; }
+        .log-area { height: 150px; background-color: #e9ecef; border: 1px solid #dee2e6; font-family: monospace; font-size: 0.75rem; overflow-y: scroll; white-space: pre-wrap; word-wrap: break-word; margin-top: 15px; padding: 10px; border-radius: 5px;}
+        .table-sm th, .table-sm td { padding: 0.25rem 0.4rem; vertical-align: middle; font-size: 0.8rem; text-align: right; white-space: nowrap; }
+        .table-sm thead th { position: sticky; top: 0; background-color: #e9ecef; z-index: 10; font-weight: bold;}
+        .strike-col { text-align: center !important; font-weight: bold; background-color: #f8f9fa; }
+        .call-bg { background-color: rgba(25, 135, 84, 0.05); }
+        .put-bg { background-color: rgba(220, 53, 69, 0.05); }
+        #loadingIndicator { display: none; align-items: center; justify-content: center; margin-top: 20px; }
+        .table-container { max-height: 50vh; overflow-y: auto; overflow-x: auto; border: 1px solid #dee2e6; border-radius: 5px; }
+        .form-label-sm { font-size: 0.9rem; margin-bottom: 0.2rem; }
+        .final-warning { background-color: #f8d7da; border-left-color: #dc3545; color: #721c24; padding: 10px 15px; margin-bottom: 15px; border-left: 5px solid #dc3545; font-size: 0.9rem; border-radius: 5px; }
+        .error-message { color: #dc3545; font-weight: bold; margin-top: 10px; text-align: center; }
+        .info-message { color: #007bff; font-weight: bold; margin-top: 10px; text-align: center; }
+        .success-message { color: #28a745; font-weight: bold; margin-top: 10px; text-align: center; }
+        .nav-back { margin-bottom: 20px; text-align: center; font-size: 0.9rem; }
+        .selected-orders-summary { border: 1px dashed #007bff; padding: 10px; margin-top: 20px; border-radius: 5px; background-color: rgba(0, 123, 255, 0.05); }
+        .selected-orders-summary h6 { color: #007bff; }
+        .selected-order-item { font-size: 0.9rem; margin-bottom: 5px; }
+        .order-price-highlight { font-weight: bold; color: #28a745; }
+    </style>
+</head>
+<body>
+<div class="container-fluid">
+    <h3>Delta Exchange Option Chain & Order Tool</h3>
+    <div class="nav-back">
+        <a href="#">« Main Menu</a> | <a href="#">Authentication</a> | <a href="#">Square Off »</a>
+    </div>
+
+    <!-- API Key & Secret Inputs -->
+    <div class="row g-2 mb-3">
+        <div class="col-md-6">
+            <label for="apiKey" class="form-label form-label-sm">API Key:</label>
+            <input type="text" id="apiKey" class="form-control form-control-sm" placeholder="Your Delta Exchange API Key">
+        </div>
+        <div class="col-md-6">
+            <label for="apiSecret" class="form-label form-label-sm">API Secret:</label>
+            <input type="password" id="apiSecret" class="form-control form-control-sm" placeholder="Your Delta Exchange API Secret">
+        </div>
+    </div>
+    <div class="final-warning mb-3">
+        <p class="fw-bold text-danger">FINAL CHECK: If "Signature Mismatch" errors continue, the problem is almost certainly one of the following:</p>
+        <ol>
+            <li>Your **API Secret** is incorrect (check for typos or extra spaces).</li>
+            <li>Your **API Key** is incorrect.</li>
+            <li>The API Key does not have **trading permissions** enabled on Delta Exchange.</li>
+            <li>Your **system clock** is significantly out of sync with Delta Exchange's servers.</li>
+            <li>**Ensure your Python backend (`app.py`) is running!**</li>
+        </ol>
+    </div>
+
+    <!-- Input Controls (Fetch Chain) -->
+    <div class="row g-2 align-items-end mb-3">
+        <div class="col-md-4">
+            <label for="cryptoAssetSelect" class="form-label form-label-sm">Crypto Asset:</label>
+            <select id="cryptoAssetSelect" class="form-select form-select-sm">
+                <option value="BTC">Bitcoin (BTC)</option>
+                <option value="ETH">Ethereum (ETH)</option>
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label for="expiryDate" class="form-label form-label-sm">Expiry Date (DD-MM-YYYY):</label>
+            <input type="date" id="expiryDate" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-2">
+            <button id="fetchChainBtn" class="btn btn-primary btn-sm w-100">Fetch Chain</button>
+        </div>
+        <div class="col-md-2">
+            <button id="clearLogsBtn" class="btn btn-secondary btn-sm w-100">Clear Logs</button>
+        </div>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div id="loadingIndicator" class="text-center mb-2">
+        <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+        <span>Loading data...</span>
+    </div>
+
+    <div id="statusMessage" class="mt-3"></div>
+
+    <!-- Selected Orders Summary -->
+    <div id="selectedOrdersSummary" class="selected-orders-summary d-none">
+        <h6>Selected Options for Order:</h6>
+        <div id="selectedOrderItems"></div>
+        <hr/>
+        <div class="row g-2 align-items-end mt-2">
+            <div class="col-md-3"><label class="form-label form-label-sm">Transaction Type:</label><br/><div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="transactionType" id="buyRadio" value="buy" checked><label class="form-check-label" for="buyRadio">BUY</label></div><div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="transactionType" id="sellRadio" value="sell"><label class="form-check-label" for="sellRadio">SELL</label></div></div>
+            <div class="col-md-3"><label class="form-label form-label-sm">Order Type:</label><br/><div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="orderType" id="marketRadio" value="market" checked><label class="form-check-label" for="marketRadio">MARKET</label></div><div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="orderType" id="limitRadio" value="limit"><label class="form-check-label" for="limitRadio">LIMIT</label></div></div>
+            <div class="col-md-2"><label for="orderQuantity" class="form-label form-label-sm">Quantity:</label><input type="number" id="orderQuantity" class="form-control form-control-sm" value="1" min="1" step="1"></div>
+            <div class="col-md-2"><label for="orderPrice" class="form-label form-label-sm">Order Price:</label><input type="number" id="orderPrice" class="form-control form-control-sm" placeholder="Limit Price" step="0.01" disabled></div>
+            <div class="col-md-2"><label for="timeInForce" class="form-label form-label-sm">Time In Force:</label><select id="timeInForce" class="form-select form-select-sm"><option value="gtc">GTC</option><option value="ioc">IOC</option><option value="fok">FOK</option><option value="po">PO</option></select></div>
+            <div class="col-12 mt-3 text-end"><button id="placeOrderBtn" class="btn btn-success btn-sm w-25">Place Order</button></div>
+        </div>
+    </div>
+
+    <!-- Combined Option Chain Table -->
+    <div class="row mt-3">
+        <div class="col-12">
+            <h6 class="text-center mb-3">Option Chain Data</h6>
+            <div class="table-container">
+                <table class="table table-sm table-striped table-bordered table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="call-bg">Select CE</th><th class="call-bg">Symbol (CALL)</th><th class="call-bg">Best Bid</th><th class="call-bg">Best Ask</th><th class="call-bg">Bid IV</th><th class="call-bg">Ask IV</th><th class="call-bg">Volume</th><th class="call-bg">OI</th>
+                            <th class="strike-col">Strike</th>
+                            <th class="put-bg">OI</th><th class="put-bg">Volume</th><th class="put-bg">Ask IV</th><th class="put-bg">Bid IV</th><th class="put-bg">Best Ask</th><th class="put-bg">Best Bid</th><th class="put-bg">Symbol (PUT)</th><th class="put-bg">Select PE</th>
+                        </tr>
+                    </thead>
+                    <tbody id="optionChainTableBody">
+                        <tr><td colspan="17" class="text-center">Select Crypto Asset & Expiry Date and Fetch Chain.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logs -->
+    <div class="row mt-3">
+        <div class="col"><h6>API Logs</h6><div id="logs" class="log-area"></div></div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>
+<script>
+    // --- Configuration ---
+    // Update this to point to your Flask backend URL
+    const BACKEND_BASE_URL = 'http://127.0.0.1:5000'; 
+    const API_KEY_STORAGE_KEY = 'deltaApiKey';
+    const API_SECRET_STORAGE_KEY = 'deltaApiSecret';
+
+    // --- Globals ---
+    let apiKey = null;
+    let apiSecret = null;
+    let selectedOptions = new Map();
+
+    // --- UI Elements ---
+    const apiKeyInput = document.getElementById('apiKey');
+    const apiSecretInput = document.getElementById('apiSecret');
+    const cryptoAssetSelect = document.getElementById('cryptoAssetSelect');
+    const expiryDateEl = document.getElementById('expiryDate');
+    const fetchChainBtn = document.getElementById('fetchChainBtn');
+    const optionChainTableBody = document.getElementById('optionChainTableBody');
+    const logsEl = document.getElementById('logs');
+    const clearLogsBtn = document.getElementById('clearLogsBtn');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const statusMessageDiv = document.getElementById('statusMessage');
+    const selectedOrdersSummaryDiv = document.getElementById('selectedOrdersSummary');
+    const selectedOrderItemsDiv = document.getElementById('selectedOrderItems');
+    const buyRadio = document.getElementById('buyRadio');
+    const sellRadio = document.getElementById('sellRadio');
+    const marketRadio = document.getElementById('marketRadio');
+    const limitRadio = document.getElementById('limitRadio');
+    const orderQuantityInput = document.getElementById('orderQuantity');
+    const orderPriceInput = document.getElementById('orderPrice');
+    const timeInForceSelect = document.getElementById('timeInForce'); // This is still in UI but not sent to minimal backend payload
+    const placeOrderBtn = document.getElementById('placeOrderBtn');
+
+    // --- Logging & Messaging ---
+    function logMessage(type, ...messages) {
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = document.createElement('div');
+        const processedMessages = messages.map(m => typeof m === 'object' ? JSON.stringify(m, null, 2) : m);
+        logEntry.innerHTML = `<strong>[${timestamp} ${type}]</strong>: ${processedMessages.join(' ')}`;
+        if (type === 'ERROR') { logEntry.style.color = 'red'; logEntry.style.fontWeight = 'bold'; }
+        else if (type === 'REQUEST') { logEntry.style.color = 'blue'; }
+        else if (type === 'RESPONSE') { logEntry.style.color = 'green'; }
+        else if (type === 'WARN') { logEntry.style.color = '#fd7e14'; logEntry.style.fontWeight = 'bold';}
+        else if (type === 'DEBUG') { logEntry.style.color = '#6c757d'; }
+        logsEl.appendChild(logEntry);
+        logsEl.scrollTop = logsEl.scrollHeight;
+    }
+    function clearLogs() { logsEl.innerHTML = ''; logMessage('INFO', 'Logs cleared.'); }
+    function displayStatusMessage(message, type = 'info') { statusMessageDiv.innerHTML = `<p class="${type}-message">${message}</p>`; }
+    function clearStatusMessage() { statusMessageDiv.innerHTML = ''; }
+
+    // --- Frontend API Call Helper (To Backend) ---
+    async function makeBackendCall(path, method = 'GET', body = null) {
+        const url = `${BACKEND_BASE_URL}${path}`;
+        const headers = { 
+            'Accept': 'application/json', 
+            'User-Agent': 'javascript-frontend' 
+        };
+
+        // Send API Key and Secret in custom headers to the backend
+        // The backend is responsible for using them to authenticate with Delta Exchange
+        if (apiKey) headers['x-api-key'] = apiKey;
+        if (apiSecret) headers['x-api-secret'] = apiSecret;
+
+        if ((method === 'POST' || method === 'PUT') && body) headers['Content-Type'] = 'application/json';
+        
+        const requestOptions = { method: method, headers: headers };
+        if (body) requestOptions.body = JSON.stringify(body);
+
+        logMessage('REQUEST', `Frontend calling Backend: ${method} ${url}`, body ? `Body: ${JSON.stringify(body, null, 2)}` : '');
+
+        try {
+            const response = await fetch(url, requestOptions);
+            const data = await response.json();
+            logMessage('RESPONSE', `From Backend: ${response.status}`, JSON.stringify(data, null, 2));
+            if (!response.ok || (data.success !== undefined && !data.success)) {
+                // Backend sent an error, or Delta API error propagated
+                throw new Error(data.error || `Backend Error (${response.status}): Unknown error`);
+            }
+            return data;
+        } catch (error) {
+            logMessage('ERROR', `Frontend Backend Call Failed: ${method} ${url}: ${error.message}`);
+            throw error;
+        }
+    }
+
+
+    // --- Core Logic ---
+    function getApiCredentials() {
+        apiKey = sessionStorage.getItem(API_KEY_STORAGE_KEY) || '';
+        apiSecret = sessionStorage.getItem(API_SECRET_STORAGE_KEY) || '';
+        apiKeyInput.value = apiKey;
+        apiSecretInput.value = apiSecret;
+    }
+
+    function setLoading(isLoading) {
+        loadingIndicator.style.display = isLoading ? 'flex' : 'none';
+        fetchChainBtn.disabled = isLoading;
+        placeOrderBtn.disabled = isLoading || selectedOptions.size === 0;
+    }
+
+    async function fetchDeltaOptionChain() {
+        const asset = cryptoAssetSelect.value;
+        const expiryDateRaw = expiryDateEl.value; // YYYY-MM-DD format
+        if (!expiryDateRaw) { displayStatusMessage('Please select an expiry date.', 'error'); return; }
+        
+        // No need to format expiryDate here, backend will handle it based on its expectations.
+        // We send YYYY-MM-DD and backend converts to DD-MM-YYYY for Delta API.
+
+        clearStatusMessage();
+        optionChainTableBody.innerHTML = `<tr><td colspan="17" class="text-center">Fetching chain via backend...</td></tr>`;
+        setLoading(true);
+        selectedOptions.clear();
+        updateSelectedOrdersSummary();
+
+        try {
+            const queryParams = new URLSearchParams({
+                asset: asset,
+                expiry_date: expiryDateRaw
+            }).toString();
+
+            const responseData = await makeBackendCall(`/api/option_chain?${queryParams}`, 'GET');
+            
+            if (!responseData.result || responseData.result.length === 0) {
+                displayStatusMessage('No option chain data found.', 'info');
+                optionChainTableBody.innerHTML = `<tr><td colspan="17" class="text-center">No options found.</td></tr>`;
+                return;
+            }
+            const callOptions = responseData.result.filter(o => o.contract_type === 'call_options').sort((a, b) => parseFloat(a.strike_price) - parseFloat(b.strike_price));
+            const putOptions = responseData.result.filter(o => o.contract_type === 'put_options').sort((a, b) => parseFloat(a.strike_price) - parseFloat(b.strike_price));
+            displayCombinedOptionsTable(callOptions, putOptions);
+            displayStatusMessage(`Option chain loaded for ${asset} on ${expiryDateRaw}.`, 'success');
+        } catch (error) {
+            logMessage('ERROR', `Failed to fetch option chain: ${error.message}`);
+            displayStatusMessage(`Error: ${error.message}`, 'error');
+            optionChainTableBody.innerHTML = `<tr><td colspan="17" class="text-center">Error loading data. Check logs.</td></tr>`;
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    function formatNumber(value, decimals = 2) {
+        const num = parseFloat(value);
+        return (value === null || value === undefined || isNaN(num)) ? 'N/A' : num.toFixed(decimals);
+    }
+
+    function updateSelectedOrdersSummary() {
+        selectedOrderItemsDiv.innerHTML = '';
+        if (selectedOptions.size === 0) {
+            selectedOrdersSummaryDiv.classList.add('d-none');
+            placeOrderBtn.disabled = true;
+            return;
+        }
+        selectedOptions.forEach(option => {
+            const itemDiv = document.createElement('div');
+            itemDiv.classList.add('selected-order-item');
+            const ltp = option.quotes?.last_price || option.quotes?.best_ask || option.quotes?.best_bid || 0;
+            const orderPriceDisplay = limitRadio.checked ? (orderPriceInput.value && !isNaN(parseFloat(orderPriceInput.value)) ? parseFloat(orderPriceInput.value).toFixed(2) : '---') : 'MARKET';
+            itemDiv.innerHTML = `<span class="badge ${option.contract_type === 'call_options' ? 'bg-success' : 'bg-danger'} me-2">${option.contract_type === 'call_options' ? 'CE' : 'PE'}</span> ${option.symbol} (Strike: ${option.strike_price}, LTP: ${formatNumber(ltp)}) <strong class="order-price-highlight ms-2">Order Price: ${orderPriceDisplay}</strong>`;
+            selectedOrderItemsDiv.appendChild(itemDiv);
+        });
+        selectedOrdersSummaryDiv.classList.remove('d-none');
+        placeOrderBtn.disabled = false;
+    }
+
+    function handleOptionSelect(event) {
+        const checkbox = event.target;
+        const optionData = JSON.parse(checkbox.dataset.option);
+        if (checkbox.checked) selectedOptions.set(optionData.product_id, optionData);
+        else selectedOptions.delete(optionData.product_id);
+        updateSelectedOrdersSummary();
+    }
+
+    function displayCombinedOptionsTable(callOptions, putOptions) {
+        optionChainTableBody.innerHTML = '';
+        const strikes = new Set([...callOptions.map(o => o.strike_price), ...putOptions.map(o => o.strike_price)]);
+        const sortedStrikes = Array.from(strikes).sort((a, b) => parseFloat(a) - parseFloat(b));
+
+        sortedStrikes.forEach(strike => {
+            const call = callOptions.find(o => o.strike_price === strike) || {};
+            const put = putOptions.find(o => o.strike_price === strike) || {};
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td class="call-bg text-center">${call.product_id ? `<input type="checkbox" class="option-select-ce" data-option='${JSON.stringify(call)}'>` : ''}</td>
+                <td class="call-bg text-start">${call.symbol || 'N/A'}</td>
+                <td class="call-bg">${formatNumber(call.quotes?.best_bid)}</td><td class="call-bg">${formatNumber(call.quotes?.best_ask)}</td>
+                <td class="call-bg">${formatNumber(call.quotes?.bid_iv, 4)}</td><td class="call-bg">${formatNumber(call.quotes?.ask_iv, 4)}</td>
+                <td class="call-bg">${call.volume || 'N/A'}</td><td class="call-bg">${call.oi || 'N/A'}</td>
+                <td class="strike-col">${strike}</td>
+                <td class="put-bg">${put.oi || 'N/A'}</td><td class="put-bg">${put.volume || 'N/A'}</td>
+                <td class="put-bg">${formatNumber(put.quotes?.ask_iv, 4)}</td><td class="put-bg">${formatNumber(put.quotes?.bid_iv, 4)}</td>
+                <td class="put-bg">${formatNumber(put.quotes?.best_ask)}</td><td class="put-bg">${formatNumber(put.quotes?.best_bid)}</td>
+                <td class="put-bg text-start">${put.symbol || 'N/A'}</td>
+                <td class="put-bg text-center">${put.product_id ? `<input type="checkbox" class="option-select-pe" data-option='${JSON.stringify(put)}'>` : ''}</td>
+            `;
+            optionChainTableBody.appendChild(row);
+        });
+        optionChainTableBody.querySelectorAll('.option-select-ce, .option-select-pe').forEach(cb => cb.addEventListener('change', handleOptionSelect));
+    }
+
+    async function placeOrders() {
+        if (selectedOptions.size === 0) { displayStatusMessage('Please select at least one option to place an order.', 'error'); return; }
+        const orderTypeRaw = marketRadio.checked ? 'market' : 'limit';
+        const quantity = parseInt(orderQuantityInput.value);
+        const limitPrice = orderTypeRaw === 'limit' ? parseFloat(orderPriceInput.value) : null;
+        if (isNaN(quantity) || quantity <= 0) { displayStatusMessage('Please enter a valid quantity.', 'error'); return; }
+        if (orderTypeRaw === 'limit' && (isNaN(limitPrice) || limitPrice <= 0)) { displayStatusMessage('Please enter a valid limit price for a LIMIT order.', 'error'); return; }
+        if (!apiKey || !apiSecret) { displayStatusMessage('API Key and Secret are required for placing orders.', 'error'); return; }
+
+        setLoading(true);
+        displayStatusMessage('Attempting to place orders via backend...', 'info');
+        let successfulOrders = 0, failedOrders = 0;
+
+        for (const [productId, optionData] of selectedOptions.entries()) {
+            const orderPayload = {};
+            
+            // Required Fields as per documentation
+            orderPayload.product_id = productId;
+            orderPayload.size = quantity;
+            orderPayload.side = buyRadio.checked ? 'buy' : 'sell';
+            orderPayload.order_type = orderTypeRaw === 'market' ? 'market_order' : 'limit_order';
+            
+            // Conditionally Required Field
+            if (orderTypeRaw === 'limit') {
+                orderPayload.limit_price = limitPrice.toString(); // API expects string
+            }
+
+            logMessage('INFO', `Placing order for ${optionData.symbol} with payload:`, orderPayload);
+            try {
+                // Call the backend endpoint
+                const response = await makeBackendCall('/api/place_order', 'POST', orderPayload);
+                logMessage('SUCCESS', `Order for ${optionData.symbol} placed! ID: ${response.result?.id || 'N/A'}`);
+                successfulOrders++;
+            } catch (error) {
+                logMessage('ERROR', `Failed to place order for ${optionData.symbol}: ${error.message}`);
+                failedOrders++;
+            }
+        }
+
+        setLoading(false);
+        if (successfulOrders > 0 && failedOrders === 0) displayStatusMessage(`Successfully placed ${successfulOrders} order(s).`, 'success');
+        else if (successfulOrders > 0 && failedOrders > 0) displayStatusMessage(`Placed ${successfulOrders} order(s), but ${failedOrders} failed. Check logs.`, 'warn');
+        else displayStatusMessage(`All ${failedOrders} order(s) failed. Check logs.`, 'error');
+        
+        selectedOptions.clear();
+        optionChainTableBody.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+        updateSelectedOrdersSummary();
+    }
+
+    // --- Event Listeners & Initialization ---
+    document.addEventListener('DOMContentLoaded', () => {
+        // SET DEFAULTS
+        cryptoAssetSelect.value = 'ETH'; // Set Ethereum as default
+        expiryDateEl.value = new Date().toISOString().split('T')[0]; // Set to current date
+
+        getApiCredentials();
+        setLoading(false);
+        updateSelectedOrdersSummary();
+        logMessage('INFO', 'Delta Exchange Tool Loaded. Python backend is expected at ' + BACKEND_BASE_URL + '.');
+        
+        fetchChainBtn.addEventListener('click', fetchDeltaOptionChain);
+        clearLogsBtn.addEventListener('click', clearLogs);
+        placeOrderBtn.addEventListener('click', placeOrders);
+        apiKeyInput.addEventListener('input', e => { apiKey = e.target.value; sessionStorage.setItem(API_KEY_STORAGE_KEY, apiKey); });
+        apiSecretInput.addEventListener('input', e => { apiSecret = e.target.value; sessionStorage.setItem(API_SECRET_STORAGE_KEY, apiSecret); });
+        [marketRadio, limitRadio, orderPriceInput, orderQuantityInput, buyRadio, sellRadio].forEach(el => el.addEventListener('change', updateSelectedOrdersSummary));
+    });
+</script>
+</body>
+</html>

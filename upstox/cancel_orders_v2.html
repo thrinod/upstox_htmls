@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cancel Upstox v2 Orders</title>
+     <style>
+        /* Add similar basic styling */
+        body { font-family: sans-serif; padding: 20px; max-width: 800px; margin: auto; font-size: 14px; }
+        button { padding: 10px 15px; margin-top: 15px; cursor: pointer; background-color: #dc3545; color: white; border: none; border-radius: 4px; }
+        button:hover { background-color: #c82333; }
+        button:disabled { background-color: #aaa; cursor: not-allowed; }
+        .log-area { margin-top: 15px; padding: 10px; border: 1px solid #eee; background-color: #f8f9fa; min-height: 150px; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; max-height: 400px; overflow-y: auto;}
+        .error { color: #dc3545; font-weight: bold; }
+        .success { color: #28a745; font-weight: bold; }
+        .info { color: #17a2b8; }
+        .nav-back { margin-bottom: 20px; }
+        .token-status { margin-bottom: 15px; font-weight: bold;}
+    </style>
+</head>
+<body>
+    <h1>Cancel All Open Orders (v2 API)</h1>
+    <hr>
+
+    <div class="nav-back">
+        <a href="index.html">« Back to Main Menu</a> |
+        <a href="auth_v2.html">Go to Authentication </a> |
+        <a href="square_off_v2.html">Square Off »</a>
+    </div>
+
+    <div class="token-status">Access Token Status: <span id="tokenLoadedStatus" class="error">Checking...</span></div>
+
+    <button id="cancelAllBtn">Cancel ALL Open Orders</button>
+
+    <div class="log-area" id="cancelLog">Actions will be logged here...</div>
+
+    <script>
+        // --- Config & Elements ---
+        const UPSTOX_API_BASE_URL = "https://api.upstox.com";
+        const API_VERSION = "2.0";
+        const LOCAL_STORAGE_TOKEN_KEY = 'upstoxAccessToken'; // Must match the key used in auth_v2.html
+
+        const tokenLoadedStatus = document.getElementById('tokenLoadedStatus');
+        const cancelAllBtn = document.getElementById('cancelAllBtn');
+        const cancelLogDiv = document.getElementById('cancelLog');
+
+        // Global variable for the loaded token
+        let loadedAccessToken = null;
+
+        // --- Helper Functions ---
+         function logTo(divElement, message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            entry.className = type;
+            divElement.appendChild(entry);
+            divElement.scrollTop = divElement.scrollHeight;
+        }
+
+        // --- Load Token on Page Load ---
+        function loadTokenFromStorage() {
+            loadedAccessToken = localStorage.getItem(LOCAL_STORAGE_TOKEN_KEY);
+            if (loadedAccessToken) {
+                tokenLoadedStatus.textContent = 'Loaded from Browser Storage';
+                tokenLoadedStatus.className = 'success';
+                cancelAllBtn.disabled = false;
+            } else {
+                tokenLoadedStatus.textContent = 'Not Found in Browser Storage. Please Authenticate first.';
+                tokenLoadedStatus.className = 'error';
+                cancelAllBtn.disabled = true; // Disable button if no token
+                logTo(cancelLogDiv, 'Error: Access Token not found. Go to the Authentication page.', 'error');
+            }
+        }
+
+        // --- Cancellation Logic (v2 - Same as tabbed version) ---
+
+        const V2_OPEN_ORDER_STATUSES = [ "open", "trigger pending", "after market order req received" ]; // Verify!
+
+        async function cancelSingleOrderV2(token, orderId) {
+             // Identical to the cancelSingleOrderV2 function in the previous tabbed example
+             const cancelUrl = `${UPSTOX_API_BASE_URL}/v2/order/cancel?order_id=${encodeURIComponent(orderId)}`;
+             const headers = { 'Accept': 'application/json', 'Api-Version': API_VERSION, 'Authorization': `Bearer ${token}` };
+             logTo(cancelLogDiv, `  Attempting cancellation for v2 order_id: ${orderId}...`);
+             try {
+                 const response = await fetch(cancelUrl, { method: 'DELETE', headers: headers, mode: 'cors' });
+                 const responseData = await response.json().catch(() => ({ status: 'error', message: 'Failed to parse JSON', http_code: response.status }));
+                 if (response.ok && responseData.status === 'success') {
+                     const cancelledId = responseData?.data?.order_id || orderId;
+                     logTo(cancelLogDiv, `  ✅ SUCCESS cancelling v2 order_id: ${cancelledId}`, 'success');
+                     return { status: 'fulfilled', value: { orderId: cancelledId, success: true } };
+                 } else {
+                     const errorMsg = responseData?.message || responseData?.error || `HTTP ${response.status}`;
+                     logTo(cancelLogDiv, `  ❌ FAILED to cancel v2 order_id: ${orderId}. Reason: ${errorMsg}`, 'error');
+                     return { status: 'rejected', reason: { orderId: orderId, success: false, message: errorMsg } };
+                 }
+             } catch (error) {
+                 logTo(cancelLogDiv, `  ❌ NETWORK/FETCH ERROR cancelling v2 order_id: ${orderId}. Reason: ${error.message}`, 'error');
+                 return { status: 'rejected', reason: { orderId: orderId, success: false, message: `Network/Fetch Error: ${error.message}` } };
+             }
+        }
+
+        cancelAllBtn.addEventListener('click', async () => {
+            if (!loadedAccessToken) {
+                logTo(cancelLogDiv, 'Error: Cannot cancel orders without an Access Token.', 'error');
+                return;
+            }
+            // Identical cancellation flow as the tabbed version, using loadedAccessToken
+            cancelLogDiv.innerHTML = '';
+            logTo(cancelLogDiv, 'Starting v2 order cancellation process...');
+            cancelAllBtn.disabled = true;
+
+            const getOrdersUrl = `${UPSTOX_API_BASE_URL}/v2/order/retrieve-all`;
+            const headers = { 'Accept': 'application/json', 'Api-Version': API_VERSION, 'Authorization': `Bearer ${loadedAccessToken}` };
+
+            try {
+                logTo(cancelLogDiv, 'Fetching all v2 orders...');
+                const response = await fetch(getOrdersUrl, { method: 'GET', headers: headers, mode: 'cors' });
+                const orderData = await response.json().catch(() => null);
+                if (!response.ok || !orderData || orderData.status !== 'success') {
+                     throw new Error(orderData?.message || `HTTP ${response.status}: Failed to fetch orders`);
+                }
+                const allOrders = orderData.data || [];
+                logTo(cancelLogDiv, `Retrieved ${allOrders.length} v2 orders total.`);
+                const openOrders = allOrders.filter(o => o.status && V2_OPEN_ORDER_STATUSES.includes(o.status.toLowerCase()) && o.order_id);
+
+                if (openOrders.length === 0) {
+                     logTo(cancelLogDiv, 'No open v2 orders found matching specified statuses.', 'success'); return;
+                }
+                logTo(cancelLogDiv, `Found ${openOrders.length} open v2 order(s) to cancel:`);
+                openOrders.forEach(o => logTo(cancelLogDiv, `  - ID: ${o.order_id}, Symbol: ${o.tradingsymbol || 'N/A'}, Status: ${o.status}`));
+                logTo(cancelLogDiv, '------------------------------------');
+
+                const cancelPromises = openOrders.map(order => cancelSingleOrderV2(loadedAccessToken, order.order_id));
+                const results = await Promise.allSettled(cancelPromises);
+
+                let successCount = 0, failureCount = 0;
+                results.forEach(result => { if (result.status === 'fulfilled' && result.value.success) successCount++; else failureCount++; });
+                logTo(cancelLogDiv, '------------------------------------');
+                logTo(cancelLogDiv, 'Cancellation Summary:', 'info');
+                logTo(cancelLogDiv, `  Successfully cancelled: ${successCount}`, 'success');
+                logTo(cancelLogDiv, `  Failed attempts:      ${failureCount}`, failureCount > 0 ? 'error' : 'info');
+
+            } catch (error) {
+                logTo(cancelLogDiv, `Critical Error: ${error.message}`, 'error');
+            } finally {
+                cancelAllBtn.disabled = false; // Re-enable even on error, unless token is missing
+                 loadTokenFromStorage(); // Re-check token status after process
+            }
+        });
+
+        // --- Initial Load ---
+        document.addEventListener('DOMContentLoaded', loadTokenFromStorage);
+
+    </script>
+
+</body>
+</html>

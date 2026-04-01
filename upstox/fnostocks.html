@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upstox Custom Watchlist (CSV)</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        body { padding-top: 1rem; padding-bottom: 2rem; background-color: #f4f6f9; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        .container-fluid { max-width: 1600px; }
+        .card { box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: none; margin-bottom: 1rem; }
+        
+        /* Table Styles */
+        .table-custom th { background-color: #212529; color: #fff; position: sticky; top: 0; z-index: 10; font-weight: 500; font-size: 0.9rem; }
+        .table-custom td { vertical-align: middle; font-weight: 500; font-size: 0.95rem; }
+        .symbol-col { font-weight: bold; color: #2c3e50; }
+        
+        /* Heatmap / Color Coding logic */
+        .bg-strong-up { background-color: #198754 !important; color: white !important; } 
+        .bg-up { background-color: #d1e7dd !important; color: #0f5132 !important; } 
+        .bg-neutral { background-color: #ffffff !important; }
+        .bg-down { background-color: #f8d7da !important; color: #842029 !important; } 
+        .bg-strong-down { background-color: #dc3545 !important; color: white !important; } 
+
+        /* Loading Spinner */
+        #loader { display: none; align-items: center; justify-content: center; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); z-index: 9999; }
+        
+        /* Utility */
+        .price-up { color: #198754; }
+        .price-down { color: #dc3545; }
+        .refresh-btn { min-width: 120px; }
+    </style>
+</head>
+<body>
+
+<!-- Loader Overlay -->
+<div id="loader">
+    <div class="text-center">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+        <div class="mt-2 fw-bold" id="loaderText">Loading Market Data...</div>
+    </div>
+</div>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h3 class="mb-0"><i class="bi bi-file-earmark-spreadsheet"></i> CSV Watchlist</h3>
+            <small class="text-muted">Upload NSE CSV to fetch live Upstox Data</small>
+        </div>
+        <div>
+            <a href="index.html" class="btn btn-outline-secondary btn-sm me-2">Back to Menu</a>
+            <button id="refreshBtn" class="btn btn-primary refresh-btn"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+        </div>
+    </div>
+
+    <div id="tokenAlert" class="alert alert-warning py-2 small" style="display:none;"></div>
+
+    <!-- File Upload Section -->
+    <div class="card mb-3">
+        <div class="card-body bg-light">
+            <div class="row align-items-center">
+                <div class="col-md-7">
+                    <label for="csvFileInput" class="form-label fw-bold small">Upload NSE CSV File:</label>
+                    <div class="input-group">
+                        <input type="file" class="form-control" id="csvFileInput" accept=".csv">
+                        <!-- View Stored Data Button -->
+                        <button class="btn btn-outline-primary" type="button" id="viewStoredDataBtn" title="View the list currently in memory">
+                            <i class="bi bi-list-ul"></i> View Stored List
+                        </button>
+                        <button class="btn btn-outline-danger" type="button" id="resetListBtn" title="Clear CSV and use default list">
+                            <i class="bi bi-trash"></i> Reset
+                        </button>
+                    </div>
+                    <div class="form-text small">Accepts standard NSE CSV format (Headers: "SYMBOL", "OPEN", etc.)</div>
+                </div>
+                <div class="col-md-5 text-end">
+                     <div class="p-2 border rounded bg-white mt-1">
+                        <small class="d-block text-muted">Current Memory Status:</small>
+                        <strong id="listSourceLabel" class="text-primary">Default List</strong>
+                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Market Table -->
+    <div class="card">
+        <div class="card-header bg-white fw-bold">Live Market Data (Upstox)</div>
+        <div class="card-body p-0">
+            <div class="table-responsive" style="height: 65vh;">
+                <table class="table table-hover table-bordered table-custom mb-0 text-center">
+                    <thead>
+                        <tr>
+                            <th class="text-start">Symbol</th>
+                            <th>LTP</th>
+                            <th>Chg %</th>
+                            <th>Change</th>
+                            <th>Open</th>
+                            <th>High</th>
+                            <th>Low</th>
+                            <th>Prev. Close</th>
+                        </tr>
+                    </thead>
+                    <tbody id="marketTableBody">
+                        <tr><td colspan="8" class="text-center py-5">Upload a CSV or Click "Refresh" to load...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer bg-white d-flex justify-content-between align-items-center">
+            <span class="small text-muted" id="lastUpdated">Last Updated: -</span>
+            <span class="small text-muted" id="stockCount">Stocks: 0</span>
+        </div>
+    </div>
+</div>
+
+<!-- Modal to View Stored Data -->
+<div class="modal fade" id="storedDataModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title">Stored Symbols in Memory</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <table class="table table-striped table-sm mb-0">
+                    <thead class="table-dark sticky-top">
+                        <tr>
+                            <th style="width: 50px;">#</th>
+                            <th>Symbol Name</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="storedDataBody">
+                        <!-- Content filled by JS -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <span class="me-auto small text-muted" id="storedDataCount">Total: 0</span>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // --- Constants & Config ---
+    const API_BASE_URL = 'https://api.upstox.com/v2';
+    const ACCESS_TOKEN_KEY = 'upstoxAccessToken';
+    const CUSTOM_WATCHLIST_KEY = 'upstoxCustomWatchlist'; // LocalStorage Key for CSV data
+
+    // Fallback list if no CSV is uploaded
+    const FALLBACK_FO_STOCKS = [
+        "NIFTY", "BANKNIFTY", "RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS", "SBIN", "AXISBANK",
+        "KOTAKBANK", "ITC", "BHARTIARTL", "BAJFINANCE", "TATAMOTORS", "MARUTI", "HCLTECH", "SUNPHARMA",
+        "TITAN", "ADANIENT", "ADANIPORTS", "ULTRACEMCO", "POWERGRID", "NTPC", "ONGC", "WIPRO"
+    ];
+
+    let accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
+    let activeSymbols = []; // This holds the currently loaded list
+
+    // --- UI Helpers ---
+    const loader = document.getElementById('loader');
+    const loaderText = document.getElementById('loaderText');
+    const tableBody = document.getElementById('marketTableBody');
+    const tokenAlert = document.getElementById('tokenAlert');
+    const csvFileInput = document.getElementById('csvFileInput');
+    const listSourceLabel = document.getElementById('listSourceLabel');
+    const resetListBtn = document.getElementById('resetListBtn');
+    
+    // Modal Helpers
+    const viewStoredDataBtn = document.getElementById('viewStoredDataBtn');
+    const storedDataModal = new bootstrap.Modal(document.getElementById('storedDataModal'));
+    const storedDataBody = document.getElementById('storedDataBody');
+    const storedDataCount = document.getElementById('storedDataCount');
+
+    function showLoader(show, text = "Loading...") {
+        loader.style.display = show ? 'flex' : 'none';
+        loaderText.innerText = text;
+    }
+
+    function checkAuth() {
+        if (!accessToken) {
+            tokenAlert.className = 'alert alert-danger py-2';
+            tokenAlert.innerHTML = `<strong>Error:</strong> Access Token missing. Please authenticate in the main tool first.`;
+            tokenAlert.style.display = 'block';
+            document.getElementById('refreshBtn').disabled = true;
+            return false;
+        }
+        tokenAlert.className = 'alert alert-success py-2';
+        tokenAlert.innerHTML = `<strong>Authenticated:</strong> Token loaded (ends ...${accessToken.slice(-4)})`;
+        tokenAlert.style.display = 'block';
+        return true;
+    }
+
+    function formatNumber(num) {
+        if (num === null || num === undefined) return '-';
+        return num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // --- CSV Parsing Logic ---
+    csvFileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const text = e.target.result;
+            processCSV(text);
+        };
+        reader.readAsText(file);
+    });
+
+    resetListBtn.addEventListener('click', function() {
+        if(confirm("Are you sure you want to clear the custom CSV list?")) {
+            localStorage.removeItem(CUSTOM_WATCHLIST_KEY);
+            csvFileInput.value = ''; // Clear input
+            loadSymbolList(); // Reload default
+            refreshData();
+        }
+    });
+
+    // View Stored Data Logic
+    viewStoredDataBtn.addEventListener('click', function() {
+        storedDataBody.innerHTML = '';
+        if(activeSymbols.length === 0) {
+            storedDataBody.innerHTML = '<tr><td colspan="3" class="text-center">No symbols stored.</td></tr>';
+        } else {
+            activeSymbols.forEach((sym, index) => {
+                const row = `<tr>
+                    <td>${index + 1}</td>
+                    <td class="fw-bold text-primary">${sym}</td>
+                    <td><span class="badge bg-success">Active</span></td>
+                </tr>`;
+                storedDataBody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+        storedDataCount.innerText = `Total: ${activeSymbols.length}`;
+        storedDataModal.show();
+    });
+
+    function processCSV(csvText) {
+        const lines = csvText.split(/\r\n|\n/);
+        const symbols = [];
+        let symbolColIndex = -1;
+
+        // Step 1: Parse Headers to find "SYMBOL" column
+        if (lines.length > 0) {
+            const headerCells = lines[0].split(',').map(cell => 
+                cell.replace(/['"]+/g, '').trim() // Remove quotes and spaces
+            );
+            symbolColIndex = headerCells.findIndex(h => h === "SYMBOL");
+        }
+
+        if (symbolColIndex === -1) {
+            alert("Error: Could not find a 'SYMBOL' column in the CSV. Please check the format.");
+            return;
+        }
+
+        // Step 2: Extract Data
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+            const cells = line.split(',');
+            if (cells.length > symbolColIndex) {
+                let cleanSymbol = cells[symbolColIndex].replace(/['"]+/g, '').trim();
+                if (cleanSymbol && cleanSymbol.length > 0) {
+                    symbols.push(cleanSymbol);
+                }
+            }
+        }
+
+        if (symbols.length > 0) {
+            localStorage.setItem(CUSTOM_WATCHLIST_KEY, JSON.stringify(symbols));
+            loadSymbolList(); // Update State
+            refreshData(); // Fetch Data
+            alert(`Successfully loaded ${symbols.length} symbols from CSV!`);
+        } else {
+            alert("No valid symbols found in the file.");
+        }
+    }
+
+    function loadSymbolList() {
+        const stored = localStorage.getItem(CUSTOM_WATCHLIST_KEY);
+        if (stored) {
+            activeSymbols = JSON.parse(stored);
+            listSourceLabel.textContent = `Custom CSV (${activeSymbols.length} Stocks)`;
+            listSourceLabel.className = 'text-success fw-bold';
+            resetListBtn.style.display = 'inline-block';
+        } else {
+            activeSymbols = FALLBACK_FO_STOCKS;
+            listSourceLabel.textContent = `Default List (${activeSymbols.length} Stocks)`;
+            listSourceLabel.className = 'text-secondary fw-bold';
+            // resetListBtn.style.display = 'none'; // Optional: hide reset if default
+        }
+        document.getElementById('stockCount').innerText = `Stocks: ${activeSymbols.length}`;
+    }
+
+    // --- API Logic ---
+
+    async function makeUpstoxCall(endpoint) {
+        const url = `${API_BASE_URL}${endpoint}`;
+        const headers = {
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${accessToken}`
+        };
+        const response = await fetch(url, { headers });
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.message || "API Error");
+        }
+        return await response.json();
+    }
+
+    async function fetchMarketQuotes(symbols) {
+        showLoader(true, `Fetching Quotes for ${symbols.length} stocks...`);
+        
+        const instrumentKeys = symbols.map(sym => {
+            // Handle Index Edge Cases
+            if(sym.toUpperCase() === 'NIFTY') return 'NSE_INDEX|Nifty 50';
+            if(sym.toUpperCase() === 'BANKNIFTY') return 'NSE_INDEX|Nifty Bank';
+            if(sym.toUpperCase() === 'FINNIFTY') return 'NSE_INDEX|Nifty Fin Service';
+            if(sym.toUpperCase() === 'MIDCPNIFTY') return 'NSE_INDEX|Nifty Midcap Select';
+            return `NSE_EQ|${sym.toUpperCase()}`;
+        });
+
+        // Upstox limit is 100, chunk by 50
+        const chunkSize = 50;
+        const chunks = [];
+        for (let i = 0; i < instrumentKeys.length; i += chunkSize) {
+            chunks.push(instrumentKeys.slice(i, i + chunkSize));
+        }
+
+        let allQuotes = {};
+
+        try {
+            const promises = chunks.map(chunk => {
+                const keysParam = encodeURIComponent(chunk.join(','));
+                return makeUpstoxCall(`/market-quote/quotes?instrument_key=${keysParam}`);
+            });
+
+            const results = await Promise.all(promises);
+            results.forEach(res => {
+                if (res.status === 'success' && res.data) {
+                    Object.assign(allQuotes, res.data);
+                }
+            });
+            return allQuotes;
+        } catch (error) {
+            console.error("Quote Fetch Error", error);
+            alert("Error fetching quotes: " + error.message);
+            return {};
+        } finally {
+            showLoader(false);
+        }
+    }
+
+    // --- Rendering Logic ---
+
+    function getHeatmapClass(changePercent) {
+        if (changePercent >= 2.0) return 'bg-strong-up'; // Deep Green
+        if (changePercent > 0) return 'bg-up';           // Light Green
+        if (changePercent <= -2.0) return 'bg-strong-down'; // Deep Red
+        if (changePercent < 0) return 'bg-down';         // Light Red
+        return 'bg-neutral';
+    }
+
+    function renderTable(quotes) {
+        tableBody.innerHTML = '';
+        let count = 0;
+
+        const sortedKeys = Object.keys(quotes).sort((a, b) => {
+            const symA = a.split('|')[1];
+            const symB = b.split('|')[1];
+            return symA.localeCompare(symB);
+        });
+
+        if(sortedKeys.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">No data returned. Check if the Symbols in CSV match valid NSE symbols.</td></tr>`;
+            return;
+        }
+
+        sortedKeys.forEach(key => {
+            const data = quotes[key];
+            const symbol = data.symbol || key.split('|')[1]; 
+            const ltp = data.last_price;
+            const open = data.ohlc.open;
+            const high = data.ohlc.high;
+            const low = data.ohlc.low;
+            const close = data.ohlc.close; // Previous Close
+
+            // Calculate Change
+            const change = ltp - close;
+            const changePercent = ((change / close) * 100);
+
+            const rowClass = getHeatmapClass(changePercent);
+            const textClass = change >= 0 ? 'text-success' : 'text-danger';
+            const arrow = change >= 0 ? '<i class="bi bi-caret-up-fill"></i>' : '<i class="bi bi-caret-down-fill"></i>';
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="text-start symbol-col">${symbol}</td>
+                <td class="fw-bold">${formatNumber(ltp)}</td>
+                <td class="${rowClass} fw-bold">${arrow} ${formatNumber(changePercent)}%</td>
+                <td class="${textClass}">${formatNumber(change)}</td>
+                <td>${formatNumber(open)}</td>
+                <td>${formatNumber(high)}</td>
+                <td>${formatNumber(low)}</td>
+                <td class="text-muted">${formatNumber(close)}</td>
+            `;
+            tableBody.appendChild(tr);
+            count++;
+        });
+
+        document.getElementById('lastUpdated').innerText = `Last Updated: ${new Date().toLocaleTimeString()}`;
+    }
+
+    // --- Main Workflow ---
+    async function refreshData() {
+        if (!checkAuth()) return;
+        if(activeSymbols.length === 0) return;
+        const quotes = await fetchMarketQuotes(activeSymbols);
+        renderTable(quotes);
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', refreshData);
+
+    window.addEventListener('load', () => {
+        checkAuth();
+        loadSymbolList();
+        if(accessToken && activeSymbols.length > 0) {
+            refreshData();
+        }
+    });
+
+</script>
+</body>
+</html>

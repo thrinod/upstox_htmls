@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Square Off All Positions (v2)</title>
+    <style>
+        /* Basic styles - Adapt from previous examples */
+        body { font-family: sans-serif; padding: 20px; max-width: 850px; margin: auto; font-size: 14px; }
+        label { display: block; margin-top: 12px; font-weight: bold; }
+        input[type="number"], input[type="checkbox"] { padding: 8px; margin-top: 5px; border: 1px solid #ccc; margin-right: 5px;}
+        input[type="checkbox"] { transform: scale(1.2); vertical-align: middle; }
+        button { padding: 12px 20px; margin-top: 15px; cursor: pointer; border: none; border-radius: 4px; color: white; font-size: 1.1em;}
+        .btn-square-off { background-color: #dc3545; } .btn-square-off:hover { background-color: #c82333; }
+        button:disabled { background-color: #aaa; cursor: not-allowed; opacity: 0.7;}
+        .log-area { margin-top: 15px; padding: 10px; border: 1px solid #eee; background-color: #f8f9fa; min-height: 150px; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; max-height: 400px; overflow-y: auto;}
+        .error { color: #dc3545; font-weight: bold; } .success { color: #28a745; font-weight: bold; } .info { color: #17a2b8; } .warning { color: #ffc107; font-weight: bold;}
+        .nav-back { margin-bottom: 20px; }
+        .token-status { margin-bottom: 15px; font-weight: bold;}
+        .config-section { margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;}
+        .confirm-box { margin-top: 20px; padding: 10px; background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 4px;}
+        .confirm-box label { display: inline; font-weight: bold; color: #856404;}
+        hr { margin: 30px 0; }
+    </style>
+</head>
+<body>
+    <h1>Square Off ALL Positions (v2 API)</h1>
+    <p class="warning"><strong>HIGH RISK ACTION!</strong> This attempts to cancel all open orders AND place new LIMIT orders to close all net positions.</p>
+    <p class="warning">Relies on potentially delayed LTP from the positions API. Execution is not guaranteed. Verify v2 endpoints/parameters.</p>
+    <hr>
+    <div class="nav-back">
+        <a href="index.html">« Back to Main Menu</a> |
+        <a href="auth_v2.html">Go to Authentication </a> |
+        <a href="square_off_v2.html">Square Off »</a>
+    </div>
+    <div class="token-status">Access Token Status: <span id="tokenLoadedStatus" class="error">Checking...</span></div>
+
+    <!-- Configuration -->
+    <div class="config-section">
+        <label for="priceOffset">Price Offset (Absolute Value):</label>
+        <input type="number" id="priceOffset" value="0.50" step="0.05" min="0">
+        <small>Offset from LTP used for LIMIT orders. SELL orders placed at `LTP - Offset`, BUY orders placed at `LTP + Offset` to improve fill chance.</small>
+    </div>
+
+    <!-- Confirmation -->
+    <div class="confirm-box">
+        <input type="checkbox" id="confirmSquareOff">
+        <label for="confirmSquareOff">I understand the risks and want to attempt to square off ALL positions.</label>
+    </div>
+
+    <!-- Action Button -->
+    <button id="squareOffBtn" class="btn-square-off">Square Off ALL Positions NOW</button>
+
+    <!-- Log Area -->
+    <div class="log-area" id="squareOffLog">Action logs will appear here...</div>
+
+
+    <script>
+        // --- Config & Elements ---
+        const UPSTOX_API_BASE_URL = "https://api.upstox.com";
+        const API_VERSION = "2.0";
+        const LOCAL_STORAGE_TOKEN_KEY = 'upstoxAccessToken';
+
+        const tokenLoadedStatus = document.getElementById('tokenLoadedStatus');
+        const priceOffsetInput = document.getElementById('priceOffset');
+        const confirmCheckbox = document.getElementById('confirmSquareOff');
+        const squareOffBtn = document.getElementById('squareOffBtn');
+        const squareOffLogDiv = document.getElementById('squareOffLog');
+
+        let loadedAccessToken = null;
+
+        // --- Helper Functions ---
+         function logTo(divElement, message, type = 'info') { /* ... (same as previous) ... */
+            const entry = document.createElement('div'); entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`; entry.className = type; divElement.appendChild(entry); divElement.scrollTop = divElement.scrollHeight;
+         }
+         function getHeaders(token) { /* ... (same as previous) ... */
+             return { 'Accept': 'application/json', 'Api-Version': API_VERSION, 'Authorization': `Bearer ${token}` };
+         }
+         function formatNum(num, dec=2){ return typeof num === 'number' ? num.toFixed(dec) : 'N/A'; }
+         function roundPrice(price) { // Basic rounding to 2 decimal places
+             return Math.round(price * 100) / 100;
+         }
+
+        // --- Load Token & Enable/Disable Button ---
+         function loadTokenFromStorage() {
+            loadedAccessToken = localStorage.getItem(LOCAL_STORAGE_TOKEN_KEY);
+            if (loadedAccessToken) {
+                tokenLoadedStatus.textContent = 'Loaded'; tokenLoadedStatus.className = 'success';
+                // Button enabled only when token loaded AND checkbox checked
+                updateConfirmButtonState();
+            } else {
+                tokenLoadedStatus.textContent = 'Not Found. Authenticate first.'; tokenLoadedStatus.className = 'error';
+                squareOffBtn.disabled = true;
+                confirmCheckbox.disabled = true;
+            }
+        }
+
+        function updateConfirmButtonState() {
+            confirmCheckbox.checked= true;
+             squareOffBtn.disabled = !(loadedAccessToken && confirmCheckbox.checked);
+        }
+        confirmCheckbox.addEventListener('change', updateConfirmButtonState);
+
+
+        // --- Step 1: Cancel All Open Orders ---
+        const V2_CANCEL_OPEN_STATUSES = [ "open", "trigger pending", "after market order req received" ]; // Verify!
+        async function cancelSingleOrderV2(token, orderId, logDiv) { /* ... (same as manage_orders page) ... */
+             const url = `${UPSTOX_API_BASE_URL}/v2/order/cancel?order_id=${encodeURIComponent(orderId)}`;
+             logTo(logDiv, `  Attempting cancel: ${orderId}...`);
+             try { /* ... (fetch DELETE logic) ... */
+                 const response = await fetch(url, { method: 'DELETE', headers: getHeaders(token), mode: 'cors' });
+                 const data = await response.json().catch(() => ({ status: 'error', message: 'Failed parse JSON'}));
+                 if (response.ok && data.status === 'success') {
+                     logTo(logDiv, `  ✅ SUCCESS cancel: ${data?.data?.order_id || orderId}`, 'success'); return true;
+                 } else {
+                     logTo(logDiv, `  ❌ FAILED cancel: ${orderId}. ${data?.message || `HTTP ${response.status}`}`, 'error'); return false;
+                 }
+             } catch (error) { logTo(logDiv, `  ❌ NETWORK ERROR cancel: ${orderId}. ${error.message}`, 'error'); return false;}
+         }
+
+        async function cancelAllOpenOrdersV2(token, logDiv) {
+            logTo(logDiv, "Step 1: Attempting to cancel all open orders...");
+            let allCancelled = true; // Assume success unless proven otherwise
+            const url = `${UPSTOX_API_BASE_URL}/v2/order/retrieve-all`;
+            try {
+                 const response = await fetch(url, { method: 'GET', headers: getHeaders(token), mode: 'cors' });
+                 const data = await response.json().catch(() => null);
+                 if (!response.ok || !data || data.status !== 'success') {
+                     throw new Error(data?.message || `HTTP ${response.status}: Failed to fetch orders for cancellation`);
+                 }
+                 const allOrders = data.data || [];
+                 const openOrders = allOrders.filter(o => o.status && V2_CANCEL_OPEN_STATUSES.includes(o.status.toLowerCase()) && o.order_id);
+
+                 if (openOrders.length === 0) {
+                     logTo(logDiv, " -> No open orders found to cancel.", 'success');
+                     return true; // Nothing to cancel is considered success for this step
+                 }
+
+                 logTo(logDiv, ` -> Found ${openOrders.length} open orders. Attempting cancellation...`);
+                 const promises = openOrders.map(o => cancelSingleOrderV2(token, o.order_id, logDiv));
+                 const results = await Promise.allSettled(promises);
+                 let successCount = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
+                 if (successCount < openOrders.length) {
+                     allCancelled = false; // Mark as failed if any cancellation failed
+                     logTo(logDiv, ` -> WARNING: Failed to cancel ${openOrders.length - successCount} orders. Proceeding with caution.`, 'warning');
+                 } else {
+                     logTo(logDiv, ` -> Successfully cancelled all ${successCount} open orders.`, 'success');
+                 }
+                 return allCancelled; // Return true only if ALL succeeded or none existed
+
+            } catch (error) {
+                 logTo(logDiv, ` -> CRITICAL ERROR fetching/cancelling orders: ${error.message}`, 'error');
+                 logTo(logDiv, ' -> Cannot proceed with square off.', 'error');
+                 return false; // Critical failure
+            }
+        }
+
+        // --- Step 2: Fetch Positions ---
+         async function fetchPositionsV2(token, logDiv) {
+            logTo(logDiv, "Step 2: Fetching current positions...");
+             const url = `${UPSTOX_API_BASE_URL}/v2/portfolio/short-term-positions`;
+             try {
+                 const response = await fetch(url, { method: 'GET', headers: getHeaders(token), mode: 'cors' });
+                 const data = await response.json().catch(() => null);
+                 if (!response.ok || !data || data.status !== 'success') {
+                      throw new Error(data?.message || `HTTP ${response.status}: Failed fetch positions`);
+                 }
+                 const positions = data.data || [];
+                 // Filter for positions with actual holdings
+                 const netPositions = positions.filter(p => p.quantity !== 0);
+                 logTo(logDiv, ` -> Found ${netPositions.length} net positions.`, 'success');
+                 return netPositions; // Return only positions with quantity != 0
+             } catch (error) {
+                 logTo(logDiv, ` -> ERROR fetching positions: ${error.message}`, 'error');
+                 return null; // Indicate failure
+             }
+         }
+
+        // --- Step 3: Place Square Off Order ---
+         async function placeSquareOffOrderV2(token, position, offset, logDiv) {
+             const qty = Math.abs(position.quantity || 0);
+             const ltp = position.last_price; // LTP from position data (potentially stale)
+             const transactionType = position.quantity > 0 ? "SELL" : "BUY"; // SELL long, BUY short
+             const instrumentKey = position.instrument_token || position.instrument_key; // V2 might use instrument_token
+             const productType = position.product; // Use the actual product type from position data
+
+             if (qty === 0) return { success: false, message: `Skipped ${position.trading_symbol}: Zero quantity.`}; // Should be filtered already, but double check
+             if (typeof ltp !== 'number' || ltp <= 0) {
+                 logTo(logDiv, `  ⚠️ Skipping ${position.trading_symbol}: Missing or invalid LTP (${ltp}) in position data. Cannot calculate limit price.`, 'warning');
+                 return { success: false, message: `Skipped ${position.trading_symbol}: Invalid LTP.`};
+             }
+             if (!instrumentKey) {
+                 logTo(logDiv, `  ⚠️ Skipping ${position.trading_symbol}: Missing instrument key/token.`, 'warning');
+                 return { success: false, message: `Skipped ${position.trading_symbol}: Missing key.`};
+             }
+             if (!productType) {
+                 logTo(logDiv, `  ⚠️ Skipping ${position.trading_symbol}: Missing product type.`, 'warning');
+                  return { success: false, message: `Skipped ${position.trading_symbol}: Missing product.`};
+             }
+
+             // Calculate Limit Price
+             const absOffset = Math.abs(offset);
+             let limitPrice;
+             if (transactionType === "SELL") { // Closing LONG
+                 limitPrice = roundPrice(ltp - absOffset);
+             } else { // Closing SHORT
+                 limitPrice = roundPrice(ltp + absOffset);
+             }
+
+             if (limitPrice <= 0) {
+                 logTo(logDiv, `  ⚠️ Skipping ${position.trading_symbol}: Calculated LIMIT price ${limitPrice} is not positive. Check LTP (${ltp}) and offset (${offset}).`, 'warning');
+                 return { success: false, message: `Skipped ${position.trading_symbol}: Calculated price <= 0.`};
+             }
+
+             // Place the LIMIT order
+             const url = `${UPSTOX_API_BASE_URL}/v2/order/place`;
+             logTo(logDiv, `  Attempting ${transactionType} ${qty} of ${position.trading_symbol} (${productType}) @ LIMIT ${limitPrice}...`);
+             const headers = { ...getHeaders(token), 'Content-Type': 'application/json' };
+             const body = JSON.stringify({
+                 instrument_token: instrumentKey,
+                 quantity: qty,
+                 order_type: "LIMIT",
+                 product: productType, // Use product from position
+                 transaction_type: transactionType,
+                 price: limitPrice,
+                 trigger_price: 0,
+                 disclosed_quantity: 0,
+                 validity: "DAY" // Day validity for square off
+             });
+
+             try {
+                 const response = await fetch(url, { method: 'POST', headers: headers, body: body, mode: 'cors' });
+                 const data = await response.json().catch(() => ({ status: 'error', message: 'Failed parse JSON'}));
+                 if (response.ok && data.status === 'success') {
+                     logTo(logDiv, `  ✅ SUCCESS placing ${transactionType} order for ${position.trading_symbol}. Order ID: ${data?.data?.order_id || 'N/A'}`, 'success');
+                     return { success: true, orderId: data?.data?.order_id };
+                 } else {
+                     logTo(logDiv, `  ❌ FAILED placing ${transactionType} order for ${position.trading_symbol}. ${data?.message || `HTTP ${response.status}`}`, 'error');
+                     return { success: false, message: `Failed placing order: ${data?.message || `HTTP ${response.status}`}` };
+                 }
+             } catch (error) {
+                 logTo(logDiv, `  ❌ NETWORK ERROR placing ${transactionType} order for ${position.trading_symbol}. ${error.message}`, 'error');
+                 return { success: false, message: `Network error placing order: ${error.message}` };
+             }
+         }
+
+
+        // --- Main Square Off Button Handler ---
+        squareOffBtn.addEventListener('click', async () => {
+             if (!loadedAccessToken || !confirmCheckbox.checked) {
+                 logTo(squareOffLogDiv, 'Error: Must have token and confirm checkbox checked.', 'error');
+                 return;
+             }
+
+             const offsetValue = parseFloat(priceOffsetInput.value);
+             if (isNaN(offsetValue) || offsetValue < 0) {
+                  logTo(squareOffLogDiv, 'Error: Invalid Price Offset value. Must be zero or positive.', 'error');
+                  return;
+             }
+
+             squareOffLogDiv.innerHTML = ''; // Clear log
+             logTo(squareOffLogDiv, '--- INITIATING SQUARE OFF PROCESS ---', 'info');
+             squareOffBtn.disabled = true;
+             confirmCheckbox.disabled = true;
+
+             try {
+                 // Step 1: Cancel existing orders
+                 const ordersCancelled = await cancelAllOpenOrdersV2(loadedAccessToken, squareOffLogDiv);
+                 if (!ordersCancelled) {
+                     // Error already logged inside the function if critical
+                     logTo(squareOffLogDiv, "--> Halting process due to issues cancelling open orders.", 'error');
+                     return; // Stop if cancellation failed critically or partially (optional based on strictness)
+                 }
+                 logTo(squareOffLogDiv, "------------------------------------", 'info');
+
+                 // Step 2: Fetch positions
+                 const netPositions = await fetchPositionsV2(loadedAccessToken, squareOffLogDiv);
+                 if (netPositions === null) { // Check for null explicitly indicating fetch error
+                     logTo(squareOffLogDiv, "--> Halting process: Could not fetch positions.", 'error');
+                     return;
+                 }
+                  if (netPositions.length === 0) {
+                     logTo(squareOffLogDiv, "--> No net positions found to square off.", 'success');
+                     return; // Nothing to do
+                 }
+                 logTo(squareOffLogDiv, "------------------------------------", 'info');
+
+                 // Step 3: Place square-off orders
+                 logTo(squareOffLogDiv, `Step 3: Attempting to place square-off orders for ${netPositions.length} positions...`);
+                 const placementPromises = netPositions.map(pos => placeSquareOffOrderV2(loadedAccessToken, pos, offsetValue, squareOffLogDiv));
+                 const results = await Promise.allSettled(placementPromises);
+
+                 let successCount = 0;
+                 let failureCount = 0;
+                 results.forEach((result, index) => {
+                     if (result.status === 'fulfilled' && result.value.success) {
+                         successCount++;
+                     } else {
+                         failureCount++;
+                         // Error message already logged inside placeSquareOffOrderV2
+                         // Optionally log the specific failure reason summary here too
+                         // logTo(squareOffLogDiv, ` -> Failed for ${netPositions[index]?.trading_symbol}: ${result.reason?.message || result.value?.message || 'Unknown reason'}`, 'warning');
+                     }
+                 });
+
+                 logTo(squareOffLogDiv, "------------------------------------", 'info');
+                 logTo(squareOffLogDiv, "--- Square Off Attempt Summary ---", 'info');
+                 logTo(squareOffLogDiv, `Successfully placed orders: ${successCount}`, 'success');
+                 logTo(squareOffLogDiv, `Failed/Skipped attempts: ${failureCount}`, failureCount > 0 ? 'error' : 'info');
+                 logTo(squareOffLogDiv, "NOTE: Check actual order status in your terminal/app. Limit orders may not execute.", 'warning');
+
+
+             } catch (error) { // Catch any unexpected errors in the main flow
+                 logTo(squareOffLogDiv, `--- UNEXPECTED ERROR in main process: ${error.message} ---`, 'error');
+                 console.error("Square Off Process Error:", error);
+             } finally {
+                 // Re-enable controls AFTER the process finishes or fails
+                 squareOffBtn.disabled = false;
+                 confirmCheckbox.disabled = false;
+                 updateConfirmButtonState(); // Ensure button state reflects checkbox
+                 logTo(squareOffLogDiv, '--- Square Off Process Attempt Finished ---', 'info');
+             }
+        });
+
+        // --- Initial Load ---
+        document.addEventListener('DOMContentLoaded', loadTokenFromStorage);
+
+    </script>
+
+</body>
+</html>

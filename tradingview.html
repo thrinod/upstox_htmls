@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradingView Watchlist Launcher (Attempt 2 with CORS Proxy)</title>
+    <style>
+        /* --- Styles remain the same --- */
+         body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;line-height:1.6;margin:0;padding:20px;background-color:#f8f9fa;color:#212529}.container{max-width:600px;margin:20px auto;background-color:#fff;padding:25px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.1)}h1{text-align:center;color:#343a40;margin-bottom:20px}.input-container{position:relative;margin-bottom:20px}.input-group{display:flex;gap:10px}#symbolInput{flex-grow:1;padding:10px 12px;border:1px solid #ced4da;border-radius:4px;font-size:1rem}#addSymbolBtn{padding:10px 18px;background-color:#007bff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:1rem;transition:background-color .2s ease;flex-shrink:0}#addSymbolBtn:hover{background-color:#0056b3}#suggestions{display:none;position:absolute;background-color:#fff;border:1px solid #ced4da;border-top:none;border-radius:0 0 4px 4px;list-style:none;margin:0;padding:0;max-height:200px;overflow-y:auto;z-index:1000;left:0;box-shadow:0 4px 8px rgba(0,0,0,.1)}#suggestions li{padding:8px 12px;cursor:pointer;font-size:.9rem;border-bottom:1px solid #eee}#suggestions li:last-child{border-bottom:none}#suggestions li:hover{background-color:#e9ecef}#suggestions li .symbol{font-weight:700;color:#0056b3}#suggestions li .description{color:#495057;margin-left:8px}#suggestions li .exchange{color:#6c757d;font-size:.8rem;margin-left:5px;font-style:italic}#suggestions li.error-message{color:#dc3545;font-style:italic;cursor:default}#suggestions li.error-message:hover{background-color:inherit}#watchlist{list-style:none;padding:0;margin:0}#watchlist li{display:flex;justify-content:space-between;align-items:center;padding:12px 5px;border-bottom:1px solid #e9ecef;transition:background-color .15s ease}#watchlist li:last-child{border-bottom:none}#watchlist li:hover{background-color:#f1f3f5}.symbol-link{flex-grow:1;text-decoration:none;color:#0d6efd;font-weight:500;cursor:pointer;padding:5px;border-radius:3px}.symbol-link:hover{text-decoration:underline;background-color:#e7f1ff}.remove-btn{background-color:#dc3545;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:.85rem;cursor:pointer;margin-left:15px;transition:background-color .2s ease;flex-shrink:0}.remove-btn:hover{background-color:#c82333}.empty-message{text-align:center;color:#6c757d;margin-top:20px}.loading-indicator{padding:8px 12px;color:#6c757d;font-style:italic}
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Watchlist Launcher</h1>
+        <p style="text-align: center; font-size: 0.9em; color: #dc3545;">
+            <b>Warning:</b> Symbol search relies on public proxies (e.g., thingproxy) which are often unreliable, slow, or blocked by target sites like TradingView. A server-side proxy is the only robust solution.
+        </p>
+        <div class="input-container">
+             <div class="input-group">
+                <input type="text" id="symbolInput" placeholder="Search symbol (e.g., Apple or AAPL)" autocomplete="off">
+                <button id="addSymbolBtn">Add</button>
+            </div>
+            <ul id="suggestions"></ul>
+        </div>
+        <ul id="watchlist">
+             <li class="empty-message">Your watchlist is empty.</li>
+        </ul>
+    </div>
+
+    <script>
+        const symbolInput = document.getElementById('symbolInput');
+        const addSymbolBtn = document.getElementById('addSymbolBtn');
+        const watchlistUl = document.getElementById('watchlist');
+        const suggestionsUl = document.getElementById('suggestions');
+        const WATCHLIST_STORAGE_KEY = 'tradingViewWatchlist';
+
+        // --- Core TradingView API endpoint ---
+        const TV_SEARCH_API_URL = 'https://symbol-search.tradingview.com/symbol_search/';
+
+        // --- Public CORS Proxy (Trying thingproxy) ---
+        // Note: This proxy might also be blocked or unreliable.
+        const CORS_PROXY_URL_BASE = 'https://thingproxy.freeboard.io/fetch/';
+
+        let debounceTimer;
+        const DEBOUNCE_DELAY = 350;
+
+        // --- Load/Save/Render Watchlist (unchanged) ---
+        function getWatchlist() { /* ... same ... */ const storedList = localStorage.getItem(WATCHLIST_STORAGE_KEY); try { return storedList ? JSON.parse(storedList) : []; } catch (e) { console.error("Error parsing watchlist:", e); return []; } }
+        function saveWatchlist(list) { /* ... same ... */ localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(list)); }
+        function renderWatchlist() { /* ... same ... */ const watchlist = getWatchlist(); watchlistUl.innerHTML = ''; if (watchlist.length === 0) { watchlistUl.innerHTML = '<li class="empty-message">Your watchlist is empty.</li>'; return; } watchlist.forEach(symbol => { const li = document.createElement('li'); const link = document.createElement('a'); link.classList.add('symbol-link'); link.textContent = symbol; link.href = `tradingview://symbol/${encodeURIComponent(symbol)}`; link.title = `Open ${symbol} in TradingView App`; link.target = "_blank"; link.rel = "noopener noreferrer"; const removeBtn = document.createElement('button'); removeBtn.classList.add('remove-btn'); removeBtn.textContent = 'Remove'; removeBtn.dataset.symbol = symbol; removeBtn.addEventListener('click', () => removeSymbol(symbol)); li.appendChild(link); li.appendChild(removeBtn); watchlistUl.appendChild(li); }); }
+        function addSymbol() { /* ... same ... */ const symbol = symbolInput.value.trim(); if (!symbol) { alert("Please enter or select a symbol."); return; } if (!symbol.includes(':')) { alert("Please select a suggestion or enter the symbol with its exchange (e.g., NASDAQ:AAPL)."); return; } const watchlist = getWatchlist(); if (watchlist.includes(symbol)) { alert(`${symbol} is already in the watchlist.`); clearInputAndSuggestions(); return; } watchlist.push(symbol); saveWatchlist(watchlist); renderWatchlist(); clearInputAndSuggestions(); }
+        function removeSymbol(symbolToRemove) { /* ... same ... */ let watchlist = getWatchlist(); watchlist = watchlist.filter(symbol => symbol !== symbolToRemove); saveWatchlist(watchlist); renderWatchlist(); }
+        function clearInputAndSuggestions() { /* ... same ... */ symbolInput.value = ''; suggestionsUl.innerHTML = ''; suggestionsUl.style.display = 'none'; }
+
+        // --- Display Error Message Utility (unchanged) ---
+        function displaySearchError(message) { /* ... same ... */ console.error("Search Error:", message); suggestionsUl.innerHTML = `<li class="error-message">Error: ${message}. See console (F12).</li>`; suggestionsUl.style.display = 'block'; adjustSuggestionBoxWidth(); }
+
+        // --- Fetch and Display Suggestions (MODIFIED TO USE thingproxy) ---
+        async function fetchSuggestions(query) {
+            if (!query || query.length < 2) {
+                suggestionsUl.innerHTML = ''; suggestionsUl.style.display = 'none';
+                return;
+            }
+
+            suggestionsUl.innerHTML = '<li class="loading-indicator">Searching via proxy (thingproxy)...</li>';
+            suggestionsUl.style.display = 'block';
+            adjustSuggestionBoxWidth();
+
+            // 1. Construct the TARGET URL for the TradingView API
+            const targetApiUrl = `${TV_SEARCH_API_URL}?text=${encodeURIComponent(query)}&hl=1&domain=production&lang=en&type=stock%2Ccrypto%2Cforex%2Cindex`;
+
+            // 2. Construct the FULL URL using the thingproxy proxy
+            // Thingproxy needs the full target URL appended directly
+            const proxyRequestUrl = `${CORS_PROXY_URL_BASE}${targetApiUrl}`; // No extra encoding needed here
+
+            console.log(`Fetching via thingproxy: ${proxyRequestUrl}`);
+
+            try {
+                const response = await fetch(proxyRequestUrl);
+
+                console.log("Thingproxy response status:", response.status);
+
+                if (!response.ok) {
+                     // Check if the error is from the proxy itself or passed from TradingView
+                     let errorText = `Proxy/Target error ${response.status} - ${response.statusText}`;
+                     if (response.status === 403) errorText += " (Forbidden - TradingView likely blocked the proxy)";
+                     try { const errorData = await response.text(); console.error("Proxy/Target error response body:", errorData); if(errorData) errorText += ` - ${errorData.substring(0,100)}`;} catch(e){}
+                    throw new Error(errorText);
+                }
+
+                // Thingproxy *should* return the direct response from TradingView
+                // So we parse it directly as JSON
+                let tvData;
+                try {
+                    tvData = await response.json();
+                    console.log("Parsed TradingView data (via thingproxy):", tvData);
+                } catch (jsonError) {
+                    console.error("JSON Parsing Error (from thingproxy response):", jsonError);
+                     try { // Log raw text if JSON parsing fails
+                         const rawText = await response.text(); // Requires cloning response if needed before .json()
+                         console.error("Raw response text:", rawText);
+                     } catch(e){}
+                    throw new Error("Failed to parse TradingView data from proxy response.");
+                }
+
+                // Proceed to display using the parsed TradingView data
+                displaySuggestions(tvData);
+
+            } catch (error) {
+                // Catches fetch errors, proxy/target response errors, JSON parsing errors
+                displaySearchError(error.message || "An unknown error occurred during search.");
+            }
+        }
+
+        // --- Display Suggestions (unchanged logic) ---
+        function displaySuggestions(suggestions) { /* ... same ... */ suggestionsUl.innerHTML = ''; if (!suggestions || !Array.isArray(suggestions)) { console.warn("Received non-array suggestions data:", suggestions); displaySearchError("Invalid data format received."); return; } if (suggestions.length === 0) { suggestionsUl.innerHTML = '<li class="loading-indicator">No matching symbols found.</li>'; suggestionsUl.style.display = 'block'; return; } const MAX_SUGGESTIONS = 7; suggestions.slice(0, MAX_SUGGESTIONS).forEach(item => { if (!item || typeof item.symbol !== 'string' || typeof item.exchange !== 'string') { console.warn("Skipping invalid suggestion item:", item); return; } const fullSymbol = `${item.exchange}:${item.symbol}`; const li = document.createElement('li'); li.dataset.symbol = fullSymbol; const symbolSpan = document.createElement('span'); symbolSpan.classList.add('symbol'); symbolSpan.textContent = item.symbol; const descSpan = document.createElement('span'); descSpan.classList.add('description'); descSpan.textContent = item.description || ''; const exchangeSpan = document.createElement('span'); exchangeSpan.classList.add('exchange'); exchangeSpan.textContent = `(${item.exchange})`; li.appendChild(symbolSpan); li.appendChild(exchangeSpan); if(item.description) li.appendChild(descSpan); li.addEventListener('click', () => { symbolInput.value = fullSymbol; suggestionsUl.innerHTML = ''; suggestionsUl.style.display = 'none'; symbolInput.focus(); }); suggestionsUl.appendChild(li); }); suggestionsUl.style.display = 'block'; adjustSuggestionBoxWidth(); }
+
+         // --- Adjust Width Utility (unchanged) ---
+         function adjustSuggestionBoxWidth() { /* ... same ... */ try { const inputWidth = symbolInput.offsetWidth; suggestionsUl.style.width = `${inputWidth}px`; } catch (e) { console.error("Error adjusting suggestions width:", e); } }
+
+        // --- Event Listeners (unchanged) ---
+        addSymbolBtn.addEventListener('click', addSymbol);
+        symbolInput.addEventListener('keypress', (event) => { /* ... same ... */ if (event.key === 'Enter') { event.preventDefault(); addSymbol(); } });
+        symbolInput.addEventListener('input', () => { /* ... same ... */ clearTimeout(debounceTimer); const query = symbolInput.value.trim(); if (query.length > 1) { debounceTimer = setTimeout(() => { fetchSuggestions(query); }, DEBOUNCE_DELAY); } else { suggestionsUl.innerHTML = ''; suggestionsUl.style.display = 'none'; } });
+        document.addEventListener('click', (event) => { /* ... same ... */ if (!event.target.closest('.input-container')) { suggestionsUl.innerHTML = ''; suggestionsUl.style.display = 'none'; } });
+        window.addEventListener('resize', adjustSuggestionBoxWidth);
+
+        // --- Initial Render (unchanged) ---
+        document.addEventListener('DOMContentLoaded', () => { /* ... same ... */ renderWatchlist(); setTimeout(adjustSuggestionBoxWidth, 100); });
+
+    </script>
+
+</body>
+</html>

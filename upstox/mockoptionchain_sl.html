@@ -1,0 +1,919 @@
+<!-- START OF FILE mockoptionchain_v3.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upstox Option Chain & Mock Monitor</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        body { padding-top: 1rem; padding-bottom: 1rem; background-color: #f0f2f5; }
+        .container-fluid { max-width: 1600px; background-color: #ffffff; border-radius: 8px; padding: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .log-area { height: 200px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; font-family: monospace; font-size: 0.75rem; overflow-y: scroll; white-space: pre-wrap; word-wrap: break-word; margin-top: 15px; }
+        .table-sm th, .table-sm td { padding: 0.35rem 0.5rem; vertical-align: middle; font-size: 0.85rem; text-align: right; white-space: nowrap; }
+        .strike-col, .checkbox-col { text-align: center !important; font-weight: bold; }
+        .strike-col { background-color: #f8f9fa; }
+        .call-bg { background-color: #e8f5e9; } 
+        .put-bg { background-color: #fce4e4; } 
+        .table-sm thead th { position: sticky; top: 0; background-color: #343a40; color: #ffffff; z-index: 10; }
+        .strike-highlight { background-color: #fff3cd !important; font-weight: bold; }
+        #loadingIndicator { display: none; align-items: center; justify-content: center; }
+        .order-info { font-size: 0.85rem; color: #6c757d; }
+        .table-container { height: 60vh; overflow-y: auto; overflow-x: auto; border: 1px solid #dee2e6; border-radius: 4px; }
+        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { opacity: 1; }
+        .form-label-sm { font-size: 0.9rem; margin-bottom: 0.2rem; }
+        .auto-refresh-indicator { display: inline-block; margin-left: 5px; }
+        .price-input { width: 75px; display: none; margin-left: 8px; }
+        .confirm-box { background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 4px;}
+        .confirm-box label { color: #856404; font-weight: bold; }
+        .pl-positive { color: #198754; font-weight: 600; }
+        .pl-negative { color: #dc3545; font-weight: 600; }
+        .mock-positions-summary { font-size: 1.1rem; }
+        .buy-action-header { color: #90ee90 !important; }
+        .sell-action-header { color: #f08080 !important; }
+        .btn { transition: all 0.2s ease-in-out; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .nav-tabs .nav-link { color: #6c757d; }
+        .nav-tabs .nav-link.active { color: #000; background-color: #fff; border-color: #dee2e6 #dee2e6 #fff; font-weight: 600; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .spinning { animation: spin 1s linear infinite; }
+        .ohl-badge { font-weight: 500; font-size: 0.75rem; margin-right: 4px; padding: 3px 6px; border-radius: 4px; background-color: #e9ecef; border: 1px solid #ced4da; color: #495057; display: inline-block; margin-bottom: 2px;}
+        .ohl-badge span { font-weight: bold; color: #000; }
+        .ohl-badge.high { border-color: #198754; background-color: #d1e7dd; color: #0f5132; }
+        .ohl-badge.low { border-color: #dc3545; background-color: #f8d7da; color: #842029; }
+        .day-range-container { font-size: 0.75rem; margin-top: 5px; margin-bottom: 5px; }
+        .day-range-label { font-weight: bold; min-width: 60px; }
+        .progress-thin { height: 10px; background-color: #e9ecef; border-radius: 5px; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1); }
+        /* Modal specific styles */
+        .manage-card { background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px; padding: 15px; margin-bottom: 10px; }
+        .calc-input-group { max-width: 150px; }
+        
+        /* Mock Monitor Styles */
+        .monitor-badge { font-size: 0.7rem; padding: 2px 5px; border-radius: 4px; margin-right: 5px; display: inline-block;}
+        .monitor-active { background-color: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; }
+    </style>
+</head>
+<body>
+<div class="container-fluid">
+    <div class="text-center mb-4">
+        <h3 class="mb-1">Upstox Option Chain & Square-Off Tool</h3>
+        <a href="index.html" class="text-decoration-none">« Back to Main Menu</a> |
+        <a href="auth_v2.html" class="text-decoration-none">Go to Authentication</a>
+    </div>
+    
+    <div class="alert alert-info py-2" role="alert" id="tokenStatus">Loading Access Token...</div>
+    
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3"><label for="indexSelect" class="form-label form-label-sm">Index:</label><select id="indexSelect" class="form-select form-select-sm"><option value="NIFTY" data-instrument-key="NSE_INDEX|Nifty 50" data-lot-size="75">NIFTY 50</option><option value="BANKNIFTY" data-instrument-key="NSE_INDEX|Nifty Bank" data-lot-size="30">BANKNIFTY</option><option value="FINNIFTY" data-instrument-key="NSE_INDEX|Nifty Fin Service" data-lot-size="65">FINNIFTY</option><option value="MIDCPNIFTY" data-instrument-key="NSE_INDEX|Nifty Midcap Select" data-lot-size="140">MIDCP NIFTY</option><option value="SENSEX" data-instrument-key="BSE_INDEX|SENSEX" data-lot-size="20">SENSEX</option><option value="BANKEX" data-instrument-key="BSE_INDEX|BANKEX" data-lot-size="30">BANKEX</option></select></div>
+                <div class="col-md-3"><label for="expiryDate" class="form-label form-label-sm">Expiry Date:</label><input type="date" id="expiryDate" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label for="quantityLots" class="form-label form-label-sm">Lots:</label><input type="number" id="quantityLots" class="form-control form-control-sm" value="1" min="1" step="1"></div>
+                <div class="col-md-2"><button id="fetchChainBtn" class="btn btn-primary btn-sm w-100">Fetch Chain</button></div>
+                <div class="col-md-2"><button id="clearLogsBtn" class="btn btn-secondary btn-sm w-100">Clear Logs</button></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center bg-light">
+            <h5 class="mb-0">Live Positions</h5>
+            <div class="d-flex align-items-center">
+                <span class="me-3 small text-muted">Available Funds: <span id="fundsDisplay" class="fw-bold text-dark">-</span></span>
+                <button id="refreshFundsBtn" class="btn btn-sm btn-outline-secondary me-2" title="Refresh Funds"><i class="bi bi-wallet2"></i></button>
+                <div class="vr me-2"></div>
+                <button id="refreshLivePositionsBtn" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-clockwise"></i> Refresh Positions</button>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-striped mb-0">
+                    <thead><tr><th>Instrument</th><th class="text-end">Qty</th><th class="text-end">Avg. Price</th><th class="text-end">LTP</th><th class="text-end">Unrealized P/L</th><th class="text-center">Manage</th></tr></thead>
+                    <tbody id="livePositionsTableBody"><tr><td colspan="6" class="text-center p-3">Click refresh to load live positions.</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer text-end">
+            <strong>Total Unrealized P/L: <span id="totalUnrealizedPLLive">-</span></strong>
+        </div>
+    </div>
+
+    <div class="card bg-light border-danger mb-3">
+        <div class="card-header bg-danger text-white">Emergency Actions</div>
+        <div class="card-body">
+            <div class="row align-items-end g-3">
+                <div class="col-md-4">
+                    <label for="priceOffset" class="form-label form-label-sm">Price Offset for Closing Orders:</label>
+                    <input type="number" id="priceOffset" class="form-control form-control-sm" value="0.50" step="0.05" min="0">
+                    <div class="form-text small">Offset from LTP for closing LIMIT orders.</div>
+                </div>
+                <div class="col-md-2">
+                    <button id="cancelOrdersBtn" class="btn btn-warning w-100">Cancel All Orders</button>
+                </div>
+                <div class="col-md-3 d-flex align-items-center justify-content-center confirm-box p-2">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="confirmSquareOff">
+                        <label class="form-check-label small" for="confirmSquareOff">Enable Square Off</label>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <button id="squareOffBtn" class="btn btn-danger w-100" disabled>Square Off ALL Positions</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loadingIndicator" class="text-center mb-2"><div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div><span>Loading data...</span></div>
+    
+    <div class="row mb-2 align-items-center">
+        <div class="col-md-6">
+            <h6 class="mb-1">
+                Index LTP: <span id="indexLtp" class="fw-bold me-2" style="font-size: 1.2rem;">-</span>
+                <span class="ohl-badge">O: <span id="indexOpen">-</span></span>
+                <span class="ohl-badge high">H: <span id="indexHigh">-</span></span>
+                <span class="ohl-badge low">L: <span id="indexLow">-</span></span>
+                <span class="ohl-badge">PC: <span id="indexPrevClose">-</span></span>
+            </h6>
+            <div class="day-range-container d-flex align-items-center">
+                <div class="day-range-label text-danger text-start me-2" title="Day Low"><i class="bi bi-arrow-down-short"></i> <span id="barLow">-</span></div>
+                <div class="progress flex-grow-1 progress-thin">
+                    <div id="ltpProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%; transition: width 0.5s ease;"></div>
+                </div>
+                <div class="day-range-label text-success text-end ms-2" title="Day High"><span id="barHigh">-</span> <i class="bi bi-arrow-up-short"></i></div>
+            </div>
+            <div class="mb-2"><small id="indexLtpTimestamp" class="text-muted"></small> <small>(ATM Strike: <span id="atmStrikeDisplay" class="fw-bold">-</span>)</small></div>
+            <div class="small">
+                <div class="text-success"><strong>Total Calls:</strong> OI <span id="grandTotalCallOI" class="fw-bold">-</span></div>
+                <div class="text-danger"><strong>Total Puts:</strong> OI <span id="grandTotalPutOI" class="fw-bold">-</span></div>
+            </div>
+        </div>
+        <div class="col-md-6 text-end d-flex justify-content-end align-items-center">
+            <div class="form-check form-switch me-3 border p-2 rounded bg-light"><input class="form-check-input" type="checkbox" role="switch" id="mockTradingEnabled"><label class="form-check-label fw-bold" for="mockTradingEnabled">Mock Trading</label></div>
+            <div class="form-check form-switch me-3"><input class="form-check-input" type="checkbox" role="switch" id="chainAutoRefreshCheckbox"><label class="form-check-label order-info" for="chainAutoRefreshCheckbox">Chain Auto-Refresh (5s)</label><span id="chainAutoRefreshIndicator" class="auto-refresh-indicator"></span></div>
+            <div class="d-inline-flex align-items-center me-3"><div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="orderType" id="orderTypeLimit" value="LIMIT" checked><label class="form-check-label order-info" for="orderTypeLimit">LIMIT</label></div><div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="orderType" id="orderTypeMarket" value="MARKET"><label class="form-check-label order-info" for="orderTypeMarket">MARKET</label></div></div>
+            <button id="placeOrderBtn" class="btn btn-warning btn-sm">Place Multi-Order</button>
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs" id="mainTab" role="tablist">
+        <li class="nav-item" role="presentation"><button class="nav-link active" id="chain-tab" data-bs-toggle="tab" data-bs-target="#chain-tab-pane" type="button" role="tab" aria-controls="chain-tab-pane" aria-selected="true">Option Chain</button></li>
+        <li class="nav-item" role="presentation"><button class="nav-link" id="positions-tab" data-bs-toggle="tab" data-bs-target="#positions-tab-pane" type="button" role="tab" aria-controls="positions-tab-pane" aria-selected="false">Mock Positions</button></li>
+    </ul>
+
+    <div class="tab-content" id="mainTabContent">
+        <div class="tab-pane fade show active" id="chain-tab-pane" role="tabpanel" aria-labelledby="chain-tab" tabindex="0">
+            <div class="table-container mt-2" id="tableContainer">
+                <table class="table table-sm table-striped table-bordered table-hover">
+                    <thead><tr><th class="call-bg">Delta</th><th class="call-bg">IV</th><th class="call-bg">OI</th><th class="call-bg">OI Value</th><th class="call-bg">Volume</th><th class="call-bg">LTP</th><th class="call-bg checkbox-col buy-action-header">Buy CE</th><th class="call-bg checkbox-col sell-action-header">Sell CE</th><th class="strike-col">Strike</th><th class="put-bg checkbox-col buy-action-header">Buy PE</th><th class="put-bg checkbox-col sell-action-header">Sell PE</th><th class="put-bg">LTP</th><th class="put-bg">Volume</th><th class="put-bg">OI</th><th class="put-bg">OI Value</th><th class="put-bg">IV</th><th class="put-bg">Delta</th></tr></thead>
+                    <tbody id="optionChainTableBody"><tr><td colspan="17" class="text-center p-4">Select an Index and Expiry, then click "Fetch Chain".</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="positions-tab-pane" role="tabpanel" aria-labelledby="positions-tab" tabindex="0">
+            <div class="p-3 border border-top-0">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div><span class="me-4 mock-positions-summary">Unrealized P/L: <strong id="totalUnrealizedPL">-</strong></span><span class="mock-positions-summary">Realized P/L: <strong id="totalRealizedPL">-</strong></span></div>
+                    <div class="d-flex align-items-center">
+                        <div class="form-check form-switch me-3"><input class="form-check-input" type="checkbox" role="switch" id="positionsAutoRefreshCheckbox"><label class="form-check-label order-info" for="positionsAutoRefreshCheckbox">Auto-Refresh</label><span id="positionsAutoRefreshIndicator" class="auto-refresh-indicator"></span></div>
+                        <button id="refreshPositionsBtn" class="btn btn-sm btn-outline-primary me-3"><i class="bi bi-arrow-clockwise"></i> Refresh Prices</button>
+                        <button id="clearMockDataBtn" class="btn btn-sm btn-outline-danger">Clear All Mock Data</button>
+                    </div>
+                </div>
+                <h5 class="mt-2">Open Positions</h5>
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped">
+                        <thead><tr><th>Instrument</th><th class="text-end">Qty</th><th class="text-end">Avg. Price</th><th class="text-end">LTP</th><th class="text-end">Unrealized P/L</th><th class="text-center">Manage / Action</th></tr></thead>
+                        <tbody id="mockOpenPositionsTableBody"><tr><td colspan="6" class="text-center">No open positions.</td></tr></tbody>
+                    </table>
+                </div>
+                <hr class="my-4">
+                <h5 class="mt-2">Closed Positions</h5>
+                 <div class="table-responsive" style="max-height: 250px; overflow-y: auto;"><table class="table table-sm table-striped"><thead><tr><th>Instrument</th><th class="text-end">Qty</th><th class="text-end">Avg. Price</th><th class="text-end">Exit Price</th><th class="text-end">Realized P/L</th><th>Exit Time</th></tr></thead><tbody id="mockClosedPositionsTableBody"><tr><td colspan="6" class="text-center">No closed positions.</td></tr></tbody></table></div>
+            </div>
+        </div>
+    </div>
+    <div class="row mt-3"><div class="col"><h6>API Logs</h6><div id="logs" class="log-area"></div></div></div>
+</div>
+
+<!-- Position Management Modal (Live) -->
+<div class="modal fade" id="positionManageModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title" id="manageModalTitle">Manage Position</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between mb-3 small">
+                    <div>Avg Price: <strong id="modalAvgPrice">-</strong></div>
+                    <div>LTP: <strong id="modalLtp">-</strong></div>
+                    <div>Qty: <strong id="modalQty">-</strong></div>
+                </div>
+                
+                <div class="mb-3 text-center">
+                    <div class="btn-group" role="group">
+                        <input type="radio" class="btn-check" name="calcMode" id="modePercent" value="percent" checked autocomplete="off">
+                        <label class="btn btn-outline-primary btn-sm" for="modePercent">Percentage (%)</label>
+                    
+                        <input type="radio" class="btn-check" name="calcMode" id="modePrice" value="price" autocomplete="off">
+                        <label class="btn btn-outline-primary btn-sm" for="modePrice">Absolute Price (₹)</label>
+                    </div>
+                </div>
+
+                <!-- Stop Loss Section -->
+                <div class="manage-card border-danger">
+                    <h6 class="text-danger"><i class="bi bi-shield-x"></i> Stop Loss (SL-M)</h6>
+                    <div class="row align-items-center g-2">
+                        <div class="col-6">
+                            <label class="form-label-sm">SL Value</label>
+                            <input type="number" id="inputSLValue" class="form-control form-control-sm" placeholder="%" step="0.5">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label-sm">Trigger Price</label>
+                            <input type="number" id="inputSLPrice" class="form-control form-control-sm" readonly>
+                        </div>
+                        <div class="col-12 mt-2">
+                            <button id="btnPlaceSL" class="btn btn-danger btn-sm w-100">Place Stop Loss Order</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Target Section -->
+                <div class="manage-card border-success">
+                    <h6 class="text-success"><i class="bi bi-crosshair"></i> Target (Limit)</h6>
+                    <div class="row align-items-center g-2">
+                        <div class="col-6">
+                            <label class="form-label-sm">Target Value</label>
+                            <input type="number" id="inputTargetValue" class="form-control form-control-sm" placeholder="%" step="0.5">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label-sm">Limit Price</label>
+                            <input type="number" id="inputTargetPrice" class="form-control form-control-sm" readonly>
+                        </div>
+                        <div class="col-12 mt-2">
+                            <button id="btnPlaceTarget" class="btn btn-success btn-sm w-100">Place Target Order</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="alert alert-warning small py-1 mb-0"><i class="bi bi-exclamation-triangle"></i> Placing both requires sufficient margin/holdings. One does not automatically cancel the other.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Mock Monitor Modal -->
+<div class="modal fade" id="mockMonitorModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">Monitor Mock Position</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info small mb-3">
+                    <strong>Note:</strong> Monitoring only works while this tab is open and "Auto-Refresh" is enabled or you manually refresh prices.
+                </div>
+                <div class="d-flex justify-content-between mb-3 fw-bold">
+                    <span id="mockMonitorSymbol">-</span>
+                    <span>Entry: <span id="mockMonitorAvg">-</span></span>
+                    <span>LTP: <span id="mockMonitorLtp">-</span></span>
+                </div>
+                
+                <input type="hidden" id="mockMonitorKey">
+                
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label text-danger fw-bold">Stop Loss (Price)</label>
+                        <input type="number" id="mockMonitorSL" class="form-control" placeholder="0.00" step="0.05">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-success fw-bold">Target (Price)</label>
+                        <input type="number" id="mockMonitorTarget" class="form-control" placeholder="0.00" step="0.05">
+                    </div>
+                </div>
+                
+                <div class="mt-3 text-end">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="clearMockMonitor()">Stop Monitoring</button>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="saveMockMonitor()">Set Monitor</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // --- Configuration & Globals ---
+    const API_BASE_URL = 'https://api.upstox.com/v2';
+    const ACCESS_TOKEN_KEY = 'upstoxAccessToken';
+    const MOCK_OPEN_POSITIONS_KEY = 'mockPortfolioOpenPositions';
+    const MOCK_CLOSED_POSITIONS_KEY = 'mockPortfolioClosedPositions';
+    const MOCK_MONITORS_KEY = 'mockPortfolioMonitors'; // NEW
+    const NUM_STRIKES_SIDE = 7;
+    const MULTI_ORDER_ENDPOINT = '/order/multi/place';
+    const REFRESH_INTERVAL_MS = 10000;
+    
+    let accessToken = null, currentLotSize = 25;
+    let chainRefreshIntervalId = null, positionsRefreshIntervalId = null;
+    let mockOpenPositions = [], mockClosedPositions = [];
+    let mockMonitors = JSON.parse(localStorage.getItem(MOCK_MONITORS_KEY)) || {}; // NEW
+    let currentLivePositions = []; 
+    let selectedPositionForManage = null; 
+    let positionModal = null; 
+    let mockMonitorModal = null; // NEW
+    
+    // Memory storage for Funds
+    let cachedFunds = null;
+
+    // --- UI Elements ---
+    const tokenStatusEl = document.getElementById('tokenStatus'), indexSelectEl = document.getElementById('indexSelect'), expiryDateEl = document.getElementById('expiryDate'), fetchChainBtn = document.getElementById('fetchChainBtn'), indexLtpEl = document.getElementById('indexLtp'), atmStrikeDisplayEl = document.getElementById('atmStrikeDisplay'), optionChainTableBody = document.getElementById('optionChainTableBody'), placeOrderBtn = document.getElementById('placeOrderBtn'), logsEl = document.getElementById('logs'), clearLogsBtn = document.getElementById('clearLogsBtn'), loadingIndicator = document.getElementById('loadingIndicator'), quantityLotsEl = document.getElementById('quantityLots'), orderTypeLimitEl = document.getElementById('orderTypeLimit'), orderTypeMarketEl = document.getElementById('orderTypeMarket'), tableContainerEl = document.getElementById('tableContainer'), indexLtpTimestampEl = document.getElementById('indexLtpTimestamp'), grandTotalCallOIEl = document.getElementById('grandTotalCallOI'), grandTotalPutOIEl = document.getElementById('grandTotalPutOI'), priceOffsetInput = document.getElementById('priceOffset'), confirmSquareOffCheckbox = document.getElementById('confirmSquareOff'), squareOffBtn = document.getElementById('squareOffBtn'), cancelOrdersBtn = document.getElementById('cancelOrdersBtn'), mockTradingEnabledEl = document.getElementById('mockTradingEnabled'), mockOpenPositionsTableBody = document.getElementById('mockOpenPositionsTableBody'), mockClosedPositionsTableBody = document.getElementById('mockClosedPositionsTableBody'), totalUnrealizedPLEl = document.getElementById('totalUnrealizedPL'), totalRealizedPLEl = document.getElementById('totalRealizedPL'), clearMockDataBtn = document.getElementById('clearMockDataBtn');
+    const chainAutoRefreshCheckbox = document.getElementById('chainAutoRefreshCheckbox'), chainAutoRefreshIndicator = document.getElementById('chainAutoRefreshIndicator'), positionsAutoRefreshCheckbox = document.getElementById('positionsAutoRefreshCheckbox'), positionsAutoRefreshIndicator = document.getElementById('positionsAutoRefreshIndicator'), refreshPositionsBtn = document.getElementById('refreshPositionsBtn');
+    const livePositionsTableBody = document.getElementById('livePositionsTableBody'), totalUnrealizedPLLiveEl = document.getElementById('totalUnrealizedPLLive'), refreshLivePositionsBtn = document.getElementById('refreshLivePositionsBtn');
+    
+    // OHL & Progress Bar Elements
+    const indexOpenEl = document.getElementById('indexOpen');
+    const indexHighEl = document.getElementById('indexHigh');
+    const indexLowEl = document.getElementById('indexLow');
+    const indexPrevCloseEl = document.getElementById('indexPrevClose');
+    const barLowEl = document.getElementById('barLow');
+    const barHighEl = document.getElementById('barHigh');
+    const ltpProgressBar = document.getElementById('ltpProgressBar');
+
+    // Funds Elements
+    const fundsDisplayEl = document.getElementById('fundsDisplay');
+    const refreshFundsBtn = document.getElementById('refreshFundsBtn');
+
+    // Modal Elements
+    const manageModalTitle = document.getElementById('manageModalTitle');
+    const modalAvgPrice = document.getElementById('modalAvgPrice');
+    const modalLtp = document.getElementById('modalLtp');
+    const modalQty = document.getElementById('modalQty');
+    const modePercent = document.getElementById('modePercent');
+    const modePrice = document.getElementById('modePrice');
+    const inputSLValue = document.getElementById('inputSLValue');
+    const inputSLPrice = document.getElementById('inputSLPrice');
+    const btnPlaceSL = document.getElementById('btnPlaceSL');
+    const inputTargetValue = document.getElementById('inputTargetValue');
+    const inputTargetPrice = document.getElementById('inputTargetPrice');
+    const btnPlaceTarget = document.getElementById('btnPlaceTarget');
+
+    // --- Logging & API Helper ---
+    function logMessage(type, ...messages) { const timestamp = new Date().toLocaleTimeString(); const logEntry = document.createElement('div'); const processedMessages = messages.map(m => typeof m === 'object' ? JSON.stringify(m) : m); logEntry.innerHTML = `<strong>[${timestamp} ${type}]</strong>: ${processedMessages.join(' ')}`; if (type === 'ERROR') { logEntry.style.color = 'red'; logEntry.style.fontWeight = 'bold'; } else if (type === 'REQUEST') { logEntry.style.color = 'blue'; } else if (type === 'RESPONSE') { logEntry.style.color = 'green'; } else if (type === 'WARN') { logEntry.style.color = '#fd7e14'; logEntry.style.fontWeight = 'bold';} else if (type === 'MOCK') { logEntry.style.color = '#6f42c1'; logEntry.style.fontWeight = 'bold'; } logsEl.appendChild(logEntry); logsEl.scrollTop = logsEl.scrollHeight;}
+    function clearLogs() { logsEl.innerHTML = ''; logMessage('INFO', 'Logs cleared.'); }
+    async function makeApiCall(endpoint, method = 'GET', body = null) { if (!accessToken) throw new Error('Access Token missing.'); const url = `${API_BASE_URL}${endpoint}`; const headers = { 'Accept': 'application/json', 'Authorization': `Bearer ${accessToken}`}; if (body) headers['Content-Type'] = 'application/json'; const requestOptions = { method, headers, body: body ? JSON.stringify(body) : null }; logMessage('REQUEST', `${method} ${url}`, body ? `Body: ${JSON.stringify(body, null, 2)}` : ''); try { const response = await fetch(url, requestOptions); const data = await response.json().catch(() => response.text()); logMessage('RESPONSE', `${response.status}`, typeof data === 'object' ? JSON.stringify(data, null, 2) : data); if (!response.ok) { const errorMsg = data?.errors?.[0]?.message || (typeof data === 'string' ? data : JSON.stringify(data)); throw new Error(`API Error (${response.status}): ${errorMsg}`); } return data; } catch (error) { logMessage('ERROR', `API Call Failed: ${method} ${url}: ${error.message}`); throw error; } }
+
+    // --- Funds Logic ---
+    async function fetchFunds() {
+        if (!accessToken) return;
+        const icon = refreshFundsBtn.querySelector('i');
+        icon.classList.add('spinning');
+        refreshFundsBtn.disabled = true;
+        fundsDisplayEl.textContent = '...';
+        try {
+            const response = await makeApiCall('/user/get-funds-and-margin');
+            if (response?.status === 'success' && response?.data) {
+                const equityData = response.data.equity;
+                if (equityData && typeof equityData.available_margin !== 'undefined') {
+                    cachedFunds = equityData.available_margin;
+                    fundsDisplayEl.textContent = formatNumber(cachedFunds, 2, true);
+                } else {
+                    fundsDisplayEl.textContent = 'N/A';
+                }
+            } else { fundsDisplayEl.textContent = 'Err'; }
+        } catch (e) { fundsDisplayEl.textContent = 'Err'; } finally { icon.classList.remove('spinning'); refreshFundsBtn.disabled = false; }
+    }
+
+    // --- Live Positions Logic ---
+    async function fetchAndDisplayPositions() {
+        logMessage('INFO', 'Fetching live positions...');
+        const icon = refreshLivePositionsBtn.querySelector('i');
+        refreshLivePositionsBtn.disabled = true;
+        icon.classList.add('spinning');
+        livePositionsTableBody.innerHTML = `<tr><td colspan="6" class="text-center p-3">Loading...</td></tr>`;
+        try {
+            const response = await makeApiCall('/portfolio/short-term-positions');
+            currentLivePositions = response?.data || [];
+            const netPositions = currentLivePositions.filter(p => p.quantity !== 0);
+
+            if (netPositions.length === 0) {
+                livePositionsTableBody.innerHTML = `<tr><td colspan="6" class="text-center p-3">No open positions found.</td></tr>`;
+                totalUnrealizedPLLiveEl.textContent = formatNumber(0);
+                totalUnrealizedPLLiveEl.className = '';
+                return;
+            }
+
+            let totalPL = 0;
+            livePositionsTableBody.innerHTML = ''; 
+            netPositions.forEach((p, index) => {
+                totalPL += p.unrealised;
+                const plClass = p.unrealised >= 0 ? 'pl-positive' : 'pl-negative';
+                const row = `
+                    <tr>
+                        <td style="text-align:left;">${p.trading_symbol} <br><small class="text-muted">${p.product}</small></td>
+                        <td class="text-end">${p.quantity}</td>
+                        <td class="text-end">${formatNumber(p.average_price)}</td>
+                        <td class="text-end">${formatNumber(p.last_price)}</td>
+                        <td class="text-end ${plClass}">${formatNumber(p.unrealised)}</td>
+                        <td class="text-center"><button class="btn btn-sm btn-outline-dark" onclick="openManageModal(${index})">Manage</button></td>
+                    </tr>`;
+                livePositionsTableBody.insertAdjacentHTML('beforeend', row);
+            });
+            
+            totalUnrealizedPLLiveEl.textContent = formatNumber(totalPL);
+            totalUnrealizedPLLiveEl.className = totalPL >= 0 ? 'pl-positive' : 'pl-negative';
+
+        } catch (e) {
+            logMessage('ERROR', `Failed to fetch live positions: ${e.message}`);
+            livePositionsTableBody.innerHTML = `<tr><td colspan="6" class="text-center p-3 text-danger">Error loading positions.</td></tr>`;
+        } finally {
+            refreshLivePositionsBtn.disabled = false;
+            icon.classList.remove('spinning');
+        }
+    }
+
+    // --- Modal & Order Calculation Logic (Live) ---
+    function openManageModal(positionIndex) {
+        const netPositions = currentLivePositions.filter(p => p.quantity !== 0);
+        selectedPositionForManage = netPositions[positionIndex];
+
+        if (!selectedPositionForManage) { alert('Position not found'); return; }
+
+        manageModalTitle.textContent = `Manage: ${selectedPositionForManage.trading_symbol}`;
+        modalAvgPrice.textContent = formatNumber(selectedPositionForManage.average_price);
+        modalLtp.textContent = formatNumber(selectedPositionForManage.last_price);
+        modalQty.textContent = selectedPositionForManage.quantity;
+
+        inputSLValue.value = '';
+        inputSLPrice.value = '';
+        inputTargetValue.value = '';
+        inputTargetPrice.value = '';
+        modePercent.checked = true;
+        
+        if (!positionModal) positionModal = new bootstrap.Modal(document.getElementById('positionManageModal'));
+        positionModal.show();
+    }
+
+    function calculateOrderPrices() {
+        if (!selectedPositionForManage) return;
+
+        const isPercent = modePercent.checked;
+        const avgPrice = selectedPositionForManage.average_price;
+        const isLong = selectedPositionForManage.quantity > 0;
+        
+        const slVal = parseFloat(inputSLValue.value);
+        if (!isNaN(slVal)) {
+            if (isPercent) {
+                const price = isLong 
+                    ? avgPrice * (1 - (slVal / 100))
+                    : avgPrice * (1 + (slVal / 100));
+                inputSLPrice.value = price.toFixed(2);
+            }
+        } else {
+            inputSLPrice.value = '';
+        }
+
+        const tgVal = parseFloat(inputTargetValue.value);
+        if (!isNaN(tgVal)) {
+            if (isPercent) {
+                const price = isLong
+                    ? avgPrice * (1 + (tgVal / 100))
+                    : avgPrice * (1 - (tgVal / 100));
+                inputTargetPrice.value = price.toFixed(2);
+            }
+        } else {
+            inputTargetPrice.value = '';
+        }
+    }
+
+    [inputSLValue, inputTargetValue].forEach(el => el.addEventListener('input', calculateOrderPrices));
+    document.querySelectorAll('input[name="calcMode"]').forEach(el => el.addEventListener('change', () => {
+        inputSLValue.value = ''; inputSLPrice.value = '';
+        inputTargetValue.value = ''; inputTargetPrice.value = '';
+        const isPct = modePercent.checked;
+        inputSLValue.placeholder = isPct ? "%" : "Price";
+        inputTargetValue.placeholder = isPct ? "%" : "Price";
+    }));
+    
+    async function placeExitOrder(type) {
+        if (!selectedPositionForManage) return;
+        const isLong = selectedPositionForManage.quantity > 0;
+        const qty = Math.abs(selectedPositionForManage.quantity); 
+        const transactionType = isLong ? "SELL" : "BUY";
+        
+        let price = 0;
+        let triggerPrice = 0;
+        let orderType = "LIMIT";
+
+        if (type === 'SL') {
+            triggerPrice = parseFloat(inputSLPrice.value);
+            if (isNaN(triggerPrice) || triggerPrice <= 0) { alert('Invalid SL Price'); return; }
+            orderType = "SL-M"; 
+        } else {
+            price = parseFloat(inputTargetPrice.value);
+            if (isNaN(price) || price <= 0) { alert('Invalid Target Price'); return; }
+            orderType = "LIMIT";
+        }
+
+        if (!confirm(`Confirm ${type} Order?\nType: ${transactionType} ${orderType}\nQty: ${qty}\nPrice: ${type === 'SL' ? triggerPrice : price}`)) return;
+
+        const body = {
+            quantity: qty,
+            product: selectedPositionForManage.product,
+            validity: "DAY",
+            price: type === 'TARGET' ? price : 0,
+            tag: "manage_tool",
+            instrument_token: selectedPositionForManage.instrument_token,
+            order_type: orderType,
+            transaction_type: transactionType,
+            disclosed_quantity: 0,
+            trigger_price: type === 'SL' ? triggerPrice : 0,
+            is_amo: false
+        };
+
+        const btn = type === 'SL' ? btnPlaceSL : btnPlaceTarget;
+        const origText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "Placing...";
+
+        try {
+            const response = await makeApiCall('/order/place', 'POST', body);
+            if (response?.status === 'success') {
+                alert(`Order Placed Successfully! ID: ${response.data.order_id}`);
+                positionModal.hide();
+            } else {
+                alert('Order Failed. Check logs.');
+            }
+        } catch (e) {
+            alert(`Error: ${e.message}`);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = origText;
+        }
+    }
+
+    btnPlaceSL.addEventListener('click', () => placeExitOrder('SL'));
+    btnPlaceTarget.addEventListener('click', () => placeExitOrder('TARGET'));
+
+
+    // --- Option Chain Logic ---
+    function getAccessToken() { 
+        const token = localStorage.getItem(ACCESS_TOKEN_KEY); 
+        if (token) { 
+            accessToken = token; 
+            tokenStatusEl.textContent = `Access Token Loaded (ends ...${token.slice(-4)})`; 
+            tokenStatusEl.className = 'alert alert-success py-2'; 
+            fetchAndDisplayPositions();
+            fetchFunds(); 
+        } else { 
+            accessToken = null; 
+            tokenStatusEl.textContent = 'Error: Access Token missing.'; 
+            tokenStatusEl.className = 'alert alert-danger py-2'; 
+        } 
+        [fetchChainBtn, placeOrderBtn].forEach(b => b.disabled = !accessToken); 
+        updateConfirmSquareOffState(); 
+    }
+    function setLoading(isLoading) { loadingIndicator.style.display = isLoading ? 'flex' : 'none'; if (!chainRefreshIntervalId) fetchChainBtn.disabled = isLoading || !accessToken; placeOrderBtn.disabled = isLoading || !accessToken; }
+    
+    async function fetchIndexLtp(instrumentKey) { 
+        try { 
+            const encodedKey = encodeURIComponent(instrumentKey); 
+            const response = await makeApiCall(`/market-quote/quotes?instrument_key=${encodedKey}`); 
+            const quoteData = response?.data?.[instrumentKey.replace('|', ':')]; 
+            
+            if (response?.status === 'success' && quoteData) { 
+                const ltp = quoteData.last_price;
+                indexLtpEl.textContent = formatNumber(ltp); 
+                indexLtpTimestampEl.textContent = `(as of ${new Date(quoteData.last_trade_time ? parseInt(quoteData.last_trade_time) : Date.now()).toLocaleTimeString()})`; 
+                
+                if(quoteData.ohlc) {
+                    const {open, high, low, close} = quoteData.ohlc;
+                    indexOpenEl.textContent = formatNumber(open); indexHighEl.textContent = formatNumber(high);
+                    indexLowEl.textContent = formatNumber(low); indexPrevCloseEl.textContent = formatNumber(close);
+                    barLowEl.textContent = formatNumber(low); barHighEl.textContent = formatNumber(high);
+                    let percent = ((ltp - low) / (high - low)) * 100;
+                    percent = Math.max(0, Math.min(100, isNaN(percent) ? 50 : percent));
+                    ltpProgressBar.style.width = `${percent}%`;
+                    ltpProgressBar.classList.remove('bg-success', 'bg-danger');
+                    ltpProgressBar.classList.add(ltp >= close ? 'bg-success' : 'bg-danger');
+                }
+                return ltp; 
+            } else { indexLtpEl.textContent = 'Error'; return null; } 
+        } catch (error) { indexLtpEl.textContent = 'Error'; return null; } 
+    }
+    
+    async function fetchOptionChain(instrumentKey, expiryDate) { try { const encodedKey = encodeURIComponent(instrumentKey); const response = await makeApiCall(`/option/chain?instrument_key=${encodedKey}&expiry_date=${expiryDate}`); return (response?.status === 'success' && Array.isArray(response.data)) ? response.data : null; } catch (error) { return null; } }
+    function formatNumber(value, decimals = 2, useLocale = false) { const num = parseFloat(value); if (isNaN(num)) return 'N/A'; return useLocale ? num.toLocaleString('en-IN', {minimumFractionDigits: decimals, maximumFractionDigits: decimals}) : num.toFixed(decimals); }
+    function formatOiValueInCrores(value) { return (typeof value !== 'number' || isNaN(value)) ? 'N/A' : `${(value / 1e7).toFixed(2)} Cr`; }
+    
+    function processAndDisplayOptions(strikeDataArray, indexLtp) { 
+        const checkedKeys = new Set(Array.from(optionChainTableBody.querySelectorAll('.option-select:checked')).map(cb => cb.dataset.instrumentKey + cb.dataset.transactionType)); 
+        const scrollPosition = tableContainerEl.scrollTop; optionChainTableBody.innerHTML = ''; 
+        if (!strikeDataArray || strikeDataArray.length === 0 || indexLtp === null) { optionChainTableBody.innerHTML = '<tr><td colspan="17">Error loading data.</td></tr>'; return; } 
+        const sortedStrikes = [...strikeDataArray].sort((a, b) => a.strike_price - b.strike_price); 
+        let grandTotalCallOi = 0, grandTotalPutOi = 0; 
+        sortedStrikes.forEach(s => { grandTotalCallOi += s.call_options?.market_data?.oi || 0; grandTotalPutOi += s.put_options?.market_data?.oi || 0; }); 
+        grandTotalCallOIEl.textContent = formatNumber(grandTotalCallOi, 0, true); grandTotalPutOIEl.textContent = formatNumber(grandTotalPutOi, 0, true); 
+        
+        const atmIndex = sortedStrikes.findIndex(d => d.strike_price >= indexLtp) || sortedStrikes.length - 1; 
+        const atmStrike = sortedStrikes[atmIndex].strike_price; atmStrikeDisplayEl.textContent = atmStrike; 
+        const startIndex = Math.max(0, atmIndex - NUM_STRIKES_SIDE); 
+        const endIndex = Math.min(sortedStrikes.length, atmIndex + NUM_STRIKES_SIDE + 1); 
+        const getOptionDetails = d => d?.instrument_key ? { instrument_key: d.instrument_key, ltp: d.market_data?.ltp, volume: d.market_data?.volume, oi: d.market_data?.oi, iv: d.option_greeks?.iv, delta: d.option_greeks?.delta } : {}; 
+        const processedStrikes = sortedStrikes.slice(startIndex, endIndex).map(d => ({ strike_price: d.strike_price, is_atm: d.strike_price === atmStrike, call: getOptionDetails(d.call_options), put: getOptionDetails(d.put_options) })); 
+        
+        optionChainTableBody.innerHTML = ''; 
+        processedStrikes.forEach(strike => { 
+            const row = document.createElement('tr'); if (strike.is_atm) row.classList.add('strike-highlight'); const { call, put } = strike; 
+            const callOiValue = (call.oi || 0) * (call.ltp || 0), putOiValue = (put.oi || 0) * (put.ltp || 0); 
+            const callPriceInput = call.instrument_key ? `<input type="number" class="price-input form-control form-control-sm" data-instrument-key="${call.instrument_key}" min="0" step="0.05">` : ''; 
+            const putPriceInput = put.instrument_key ? `<input type="number" class="price-input form-control form-control-sm" data-instrument-key="${put.instrument_key}" min="0" step="0.05">` : ''; 
+            row.innerHTML = `<td class="call-bg">${formatNumber(call.delta, 3)}</td><td class="call-bg">${formatNumber(call.iv, 2)}</td><td class="call-bg">${formatNumber(call.oi, 0, true)}</td><td class="call-bg">${formatOiValueInCrores(callOiValue)}</td><td class="call-bg">${formatNumber(call.volume, 0, true)}</td><td class="call-bg">${formatNumber(call.ltp)}</td><td class="call-bg checkbox-col d-flex align-items-center justify-content-center">${call.instrument_key ? `<input type="checkbox" class="option-select" data-transaction-type="BUY" data-instrument-key="${call.instrument_key}" data-ltp="${call.ltp || ''}">` : ''}${callPriceInput}</td><td class="call-bg checkbox-col">${call.instrument_key ? `<input type="checkbox" class="option-select" data-transaction-type="SELL" data-instrument-key="${call.instrument_key}" data-ltp="${call.ltp || ''}">` : ''}</td><td class="strike-col">${strike.strike_price}</td><td class="put-bg checkbox-col d-flex align-items-center justify-content-center">${put.instrument_key ? `<input type="checkbox" class="option-select" data-transaction-type="BUY" data-instrument-key="${put.instrument_key}" data-ltp="${put.ltp || ''}">` : ''}${putPriceInput}</td><td class="put-bg checkbox-col">${put.instrument_key ? `<input type="checkbox" class="option-select" data-transaction-type="SELL" data-instrument-key="${put.instrument_key}" data-ltp="${put.ltp || ''}">` : ''}</td><td class="put-bg">${formatNumber(put.ltp)}</td><td class="put-bg">${formatNumber(put.volume, 0, true)}</td><td class="put-bg">${formatNumber(put.oi, 0, true)}</td><td class="put-bg">${formatOiValueInCrores(putOiValue)}</td><td class="put-bg">${formatNumber(put.iv, 2)}</td><td class="put-bg">${formatNumber(put.delta, 3)}</td>`; 
+            optionChainTableBody.appendChild(row); 
+        }); 
+        optionChainTableBody.querySelectorAll('.option-select').forEach(cb => { if (checkedKeys.has(cb.dataset.instrumentKey + cb.dataset.transactionType)) { cb.checked = true; togglePriceInput(cb); } }); 
+        tableContainerEl.scrollTop = scrollPosition; 
+    }
+    
+    // --- Mock Trading Logic ---
+    function initializeMockTrading() { 
+        mockOpenPositions = JSON.parse(localStorage.getItem(MOCK_OPEN_POSITIONS_KEY)) || []; 
+        mockClosedPositions = JSON.parse(localStorage.getItem(MOCK_CLOSED_POSITIONS_KEY)) || []; 
+        mockMonitors = JSON.parse(localStorage.getItem(MOCK_MONITORS_KEY)) || {};
+        renderMockPortfolio(); 
+    }
+    
+    function saveMockData() { 
+        localStorage.setItem(MOCK_OPEN_POSITIONS_KEY, JSON.stringify(mockOpenPositions)); 
+        localStorage.setItem(MOCK_CLOSED_POSITIONS_KEY, JSON.stringify(mockClosedPositions)); 
+        localStorage.setItem(MOCK_MONITORS_KEY, JSON.stringify(mockMonitors));
+    }
+    
+    function placeMockOrder() { const selected = Array.from(optionChainTableBody.querySelectorAll('.option-select:checked')); if (selected.length === 0) { alert(`Select options for mock trading.`); return; } const lots = parseInt(quantityLotsEl.value); if (isNaN(lots) || lots < 1) { alert('Enter valid lots.'); return; } const quantity = lots * currentLotSize; let ordersPlaced = 0; for (const cb of selected) { const instrumentKey = cb.dataset.instrumentKey; const transactionType = cb.dataset.transactionType; const ltp = parseFloat(cb.dataset.ltp); let price = document.querySelector('input[name="orderType"]:checked').value === 'LIMIT' ? parseFloat(optionChainTableBody.querySelector(`.price-input[data-instrument-key="${instrumentKey}"]`).value) : ltp; if (isNaN(price) || price <= 0) continue; const signedQuantity = (transactionType === 'BUY' ? 1 : -1) * quantity; const existing = mockOpenPositions.find(p => p.instrumentKey === instrumentKey); if (existing) { const totalValue = (existing.avgPrice * existing.quantity) + (price * signedQuantity); const newQuantity = existing.quantity + signedQuantity; if (newQuantity === 0) { mockOpenPositions = mockOpenPositions.filter(p => p.instrumentKey !== instrumentKey); delete mockMonitors[instrumentKey]; } else { existing.quantity = newQuantity; existing.avgPrice = totalValue / newQuantity; } } else { mockOpenPositions.push({ instrumentKey, quantity: signedQuantity, avgPrice: price, ltp }); } ordersPlaced++; } if (ordersPlaced > 0) { saveMockData(); renderMockPortfolio(); updateAllMockPositionsLtp(); alert(`${ordersPlaced} mock order(s) placed.`); } selected.forEach(cb => {cb.checked = false; togglePriceInput(cb); }); }
+    
+    async function exitMockPosition(instrumentKey) { 
+        const positionIndex = mockOpenPositions.findIndex(p => p.instrumentKey === instrumentKey); 
+        if (positionIndex === -1) return; 
+        const positionToClose = mockOpenPositions[positionIndex]; 
+        let exitPrice = positionToClose.ltp; 
+        try { 
+            const response = await makeApiCall(`/market-quote/ltp?instrument_key=${encodeURIComponent(instrumentKey)}`); 
+            const latestLtp = response?.data?.[instrumentKey.replace('|', ':')]?.last_price; 
+            if (typeof latestLtp === 'number') exitPrice = latestLtp; 
+        } catch (e) {} 
+        const realizedPL = (exitPrice - positionToClose.avgPrice) * positionToClose.quantity; 
+        mockClosedPositions.unshift({ ...positionToClose, exitPrice, realizedPL, exitTime: new Date().toLocaleString() }); 
+        mockOpenPositions.splice(positionIndex, 1); 
+        
+        // Remove monitor if exists
+        if(mockMonitors[instrumentKey]) delete mockMonitors[instrumentKey];
+
+        saveMockData(); 
+        renderMockPortfolio(); 
+    }
+    
+    function renderMockPortfolio() { 
+        mockOpenPositionsTableBody.innerHTML = ''; 
+        let totalUnrealizedPL = 0; 
+        if (mockOpenPositions.length === 0) { 
+            mockOpenPositionsTableBody.innerHTML = `<tr><td colspan="6" class="text-center">No open positions.</td></tr>`; 
+        } else { 
+            mockOpenPositions.forEach(pos => { 
+                const unrealizedPL = (pos.ltp - pos.avgPrice) * pos.quantity; 
+                totalUnrealizedPL += unrealizedPL; 
+                const plClass = unrealizedPL >= 0 ? 'pl-positive' : 'pl-negative'; 
+                
+                // Monitor Badge Logic
+                const monitor = mockMonitors[pos.instrumentKey];
+                let monitorBadge = '';
+                if (monitor && monitor.active) {
+                    monitorBadge = `<span class="monitor-badge monitor-active" title="SL: ${monitor.sl || '-'}, TGT: ${monitor.target || '-'}"><i class="bi bi-robot"></i> On</span>`;
+                }
+
+                const row = `<tr>
+                    <td>${pos.instrumentKey}</td>
+                    <td class="text-end">${pos.quantity}</td>
+                    <td class="text-end">${formatNumber(pos.avgPrice)}</td>
+                    <td class="text-end">${formatNumber(pos.ltp)}</td>
+                    <td class="text-end ${plClass}">${formatNumber(unrealizedPL)}</td>
+                    <td class="text-center">
+                        ${monitorBadge}
+                        <button class="btn btn-outline-primary btn-sm me-1" onclick="openMockMonitor('${pos.instrumentKey}')" title="Configure Monitor"><i class="bi bi-gear"></i></button>
+                        <button class="btn btn-danger btn-sm exit-btn" data-instrument-key="${pos.instrumentKey}">Exit</button>
+                    </td>
+                </tr>`; 
+                mockOpenPositionsTableBody.insertAdjacentHTML('beforeend', row); 
+            }); 
+            mockOpenPositionsTableBody.querySelectorAll('.exit-btn').forEach(b => b.onclick = () => exitMockPosition(b.dataset.instrumentKey)); 
+        } 
+        
+        mockClosedPositionsTableBody.innerHTML = ''; 
+        let totalRealizedPL = 0; 
+        if (mockClosedPositions.length === 0) { 
+            mockClosedPositionsTableBody.innerHTML = `<tr><td colspan="6" class="text-center">No closed positions.</td></tr>`; 
+        } else { 
+            mockClosedPositions.forEach(pos => { 
+                totalRealizedPL += pos.realizedPL; 
+                const plClass = pos.realizedPL >= 0 ? 'pl-positive' : 'pl-negative'; 
+                const row = `<tr><td>${pos.instrumentKey}</td><td class="text-end">${pos.quantity}</td><td class="text-end">${formatNumber(pos.avgPrice)}</td><td class="text-end">${formatNumber(pos.exitPrice)}</td><td class="text-end ${plClass} fw-bold">${formatNumber(pos.realizedPL)}</td><td style="text-align:left;">${pos.exitTime}</td></tr>`; 
+                mockClosedPositionsTableBody.insertAdjacentHTML('beforeend', row); 
+            }); 
+        } 
+        totalUnrealizedPLEl.textContent = formatNumber(totalUnrealizedPL); 
+        totalUnrealizedPLEl.className = totalUnrealizedPL >= 0 ? 'pl-positive fw-bold' : 'pl-negative fw-bold'; 
+        totalRealizedPLEl.textContent = formatNumber(totalRealizedPL); 
+        totalRealizedPLEl.className = totalRealizedPL >= 0 ? 'pl-positive fw-bold' : 'pl-negative fw-bold'; 
+    }
+
+    function handleClearMockData() { if (confirm('Clear ALL open and closed mock data?')) { mockOpenPositions = []; mockClosedPositions = []; mockMonitors = {}; saveMockData(); renderMockPortfolio(); } }
+    
+    async function updateAllMockPositionsLtp() { 
+        if (mockOpenPositions.length === 0) return; 
+        const keysForApi = mockOpenPositions.map(p => p.instrumentKey).join(','); 
+        try { 
+            const response = await makeApiCall(`/market-quote/ltp?instrument_key=${encodeURIComponent(keysForApi)}`); 
+            if (response.status === 'success' && response.data) { 
+                mockOpenPositions.forEach(p => { 
+                    const d = Object.values(response.data).find(v => v.instrument_token === p.instrumentKey); 
+                    if (d && d.last_price) p.ltp = d.last_price; 
+                }); 
+                renderMockPortfolio();
+                // Check Monitors
+                checkMockMonitors();
+            } 
+        } catch (e) {} 
+    }
+
+    // --- Mock Monitor Functions ---
+    function openMockMonitor(instrumentKey) {
+        const pos = mockOpenPositions.find(p => p.instrumentKey === instrumentKey);
+        if (!pos) return;
+
+        const saved = mockMonitors[instrumentKey] || {};
+        document.getElementById('mockMonitorSymbol').textContent = instrumentKey;
+        document.getElementById('mockMonitorAvg').textContent = formatNumber(pos.avgPrice);
+        document.getElementById('mockMonitorLtp').textContent = formatNumber(pos.ltp);
+        document.getElementById('mockMonitorKey').value = instrumentKey;
+        
+        document.getElementById('mockMonitorSL').value = saved.sl || '';
+        document.getElementById('mockMonitorTarget').value = saved.target || '';
+
+        if (!mockMonitorModal) mockMonitorModal = new bootstrap.Modal(document.getElementById('mockMonitorModal'));
+        mockMonitorModal.show();
+    }
+
+    function saveMockMonitor() {
+        const key = document.getElementById('mockMonitorKey').value;
+        const sl = parseFloat(document.getElementById('mockMonitorSL').value);
+        const target = parseFloat(document.getElementById('mockMonitorTarget').value);
+
+        if (isNaN(sl) && isNaN(target)) {
+            alert("Please enter at least one value (SL or Target).");
+            return;
+        }
+
+        mockMonitors[key] = { sl: isNaN(sl) ? null : sl, target: isNaN(target) ? null : target, active: true };
+        saveMockData();
+        mockMonitorModal.hide();
+        renderMockPortfolio();
+        checkMockMonitors();
+    }
+
+    function clearMockMonitor() {
+        const key = document.getElementById('mockMonitorKey').value;
+        if (mockMonitors[key]) {
+            delete mockMonitors[key];
+            saveMockData();
+        }
+        mockMonitorModal.hide();
+        renderMockPortfolio();
+    }
+
+    function checkMockMonitors() {
+        if (Object.keys(mockMonitors).length === 0 || mockOpenPositions.length === 0) return;
+
+        let triggered = false;
+        // Iterate backwards to allow safe removal if needed (though exitMockPosition handles splicing)
+        [...mockOpenPositions].forEach(pos => {
+            const monitor = mockMonitors[pos.instrumentKey];
+            if (!monitor || !monitor.active) return;
+
+            const isLong = pos.quantity > 0;
+            const currentLtp = pos.ltp;
+            let exitTriggered = false;
+            let reason = '';
+
+            if (isLong) {
+                if (monitor.sl && currentLtp <= monitor.sl) { exitTriggered = true; reason = 'Stop Loss Hit'; }
+                else if (monitor.target && currentLtp >= monitor.target) { exitTriggered = true; reason = 'Target Hit'; }
+            } else {
+                if (monitor.sl && currentLtp >= monitor.sl) { exitTriggered = true; reason = 'Stop Loss Hit'; }
+                else if (monitor.target && currentLtp <= monitor.target) { exitTriggered = true; reason = 'Target Hit'; }
+            }
+
+            if (exitTriggered) {
+                triggered = true;
+                logMessage('MOCK', `Auto-Squareoff for ${pos.instrumentKey}. Reason: ${reason} at ${currentLtp}`);
+                exitMockPosition(pos.instrumentKey);
+            }
+        });
+
+        if (triggered) {
+            // Optional: Notification sound
+        }
+    }
+
+    async function refreshChainOnly() { if (!accessToken) { stopChainAutoRefresh(); return; } chainAutoRefreshIndicator.innerHTML = `<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>`; try { const instrumentKey = indexSelectEl.options[indexSelectEl.selectedIndex].dataset.instrumentKey; const expiry = expiryDateEl.value; const ltp = await fetchIndexLtp(instrumentKey); if (ltp !== null) { const chain = await fetchOptionChain(instrumentKey, expiry); if (chain) processAndDisplayOptions(chain, ltp); } } catch (e) {} finally { chainAutoRefreshIndicator.innerHTML = ''; } }
+    function startChainAutoRefresh() { if (chainRefreshIntervalId) return; fetchChainBtn.disabled = true; indexSelectEl.disabled = true; expiryDateEl.disabled = true; refreshChainOnly(); chainRefreshIntervalId = setInterval(refreshChainOnly, REFRESH_INTERVAL_MS); }
+    function stopChainAutoRefresh() { if (!chainRefreshIntervalId) return; clearInterval(chainRefreshIntervalId); chainRefreshIntervalId = null; fetchChainBtn.disabled = !accessToken; indexSelectEl.disabled = false; expiryDateEl.disabled = false; chainAutoRefreshIndicator.innerHTML = ''; chainAutoRefreshCheckbox.checked = false; }
+    function startPositionsAutoRefresh() { if (positionsRefreshIntervalId) return; positionsAutoRefreshIndicator.innerHTML = `<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>`; updateAllMockPositionsLtp(); positionsRefreshIntervalId = setInterval(updateAllMockPositionsLtp, REFRESH_INTERVAL_MS); }
+    function stopPositionsAutoRefresh() { if (!positionsRefreshIntervalId) return; clearInterval(positionsRefreshIntervalId); positionsRefreshIntervalId = null; positionsAutoRefreshIndicator.innerHTML = ''; positionsAutoRefreshCheckbox.checked = false; }
+
+    // --- Real Order & Other Logic ---
+    async function placeRealOrder() { const selected = Array.from(optionChainTableBody.querySelectorAll('.option-select:checked')); if (selected.length === 0) { alert(`Select options to trade.`); return; } const lots = parseInt(quantityLotsEl.value); if (isNaN(lots) || lots < 1) { alert('Enter valid lots.'); return; } const totalQuantity = lots * currentLotSize; setLoading(true); const payload = []; let hasInvalidPrice = false; for (const [i, cb] of selected.entries()) { const instrumentKey = cb.dataset.instrumentKey; let orderPrice = 0; const orderType = document.querySelector('input[name="orderType"]:checked').value; if (orderType === 'LIMIT') { const priceInput = optionChainTableBody.querySelector(`.price-input[data-instrument-key="${instrumentKey}"]`); orderPrice = parseFloat(priceInput.value); if (isNaN(orderPrice) || orderPrice <= 0) { priceInput.style.border = '2px solid red'; hasInvalidPrice = true; continue; } priceInput.style.border = ''; } payload.push({ instrument_token: instrumentKey, quantity: totalQuantity, product: "D", order_type: orderType, transaction_type: cb.dataset.transactionType, price: orderPrice, validity: "DAY", disclosed_quantity: 0, trigger_price: 0, correlation_id: (i+1).toString() }); } if (hasInvalidPrice || payload.length === 0) { alert('Correct invalid prices.'); setLoading(false); return; } try { const response = await makeApiCall(MULTI_ORDER_ENDPOINT, 'POST', payload); if (response?.status === 'success') { alert(`Multi-order processed.`); } else { alert(`Multi-order failed.`); } } catch (e) { alert(`Request failed: ${e.message}`); } finally { setLoading(false); selected.forEach(cb => {cb.checked = false; togglePriceInput(cb);}); } }
+    function togglePriceInput(checkbox) { const instrumentKey = checkbox.dataset.instrumentKey; const priceInput = optionChainTableBody.querySelector(`.price-input[data-instrument-key="${instrumentKey}"]`); if (!priceInput) return; const isLimit = document.querySelector('input[name="orderType"]:checked').value === 'LIMIT'; const anyChecked = Array.from(optionChainTableBody.querySelectorAll(`.option-select[data-instrument-key="${instrumentKey}"]`)).some(cb => cb.checked); if (anyChecked && isLimit) { priceInput.style.display = 'inline-block'; const ltp = parseFloat(checkbox.dataset.ltp); if (!isNaN(ltp) && priceInput.value === '') priceInput.value = ltp.toFixed(2); } else { priceInput.style.display = 'none'; } }
+    const V2_CANCEL_OPEN_STATUSES = [ "open", "trigger pending", "after market order req received" ]; 
+    async function cancelAllOpenOrdersV2() { try { const allOrders = (await makeApiCall('/order/retrieve-all')).data || []; const openOrders = allOrders.filter(o => o.status && V2_CANCEL_OPEN_STATUSES.includes(o.status.toLowerCase()) && o.order_id); if (openOrders.length === 0) return true; const results = await Promise.all(openOrders.map(o => makeApiCall(`/order/cancel?order_id=${o.order_id}`, 'DELETE').catch(e => ({error: e})))); return !results.some(r => r.error); } catch (e) { return false; } }
+    async function handleCancelAllOrders() { if (!accessToken) return; if (!confirm('Cancel ALL open orders?')) return; setLoading(true); cancelOrdersBtn.disabled = true; try { await cancelAllOpenOrdersV2(); alert('Cancel request sent.'); } finally { setLoading(false); cancelOrdersBtn.disabled = !accessToken; } }
+    async function performFullSquareOffProcedure() { setLoading(true); squareOffBtn.disabled = true; try { await cancelAllOpenOrdersV2(); const positions = (await makeApiCall('/portfolio/short-term-positions')).data || []; const netPositions = positions.filter(p => p.quantity !== 0); if (netPositions.length === 0) return; const offset = parseFloat(priceOffsetInput.value); await Promise.allSettled(netPositions.map(pos => { const qty = Math.abs(pos.quantity); const tx = pos.quantity > 0 ? "SELL" : "BUY"; const price = Math.round((tx === "SELL" ? pos.last_price - offset : pos.last_price + offset) * 100) / 100; return makeApiCall('/order/place', 'POST', { instrument_token: pos.instrument_token, quantity: qty, order_type: "LIMIT", product: pos.product, transaction_type: tx, price: price, validity: "DAY", disclosed_quantity: 0, trigger_price: 0 }); })); } catch (e) {} finally { setLoading(false); updateConfirmSquareOffState(); } }
+    function updateConfirmSquareOffState() { squareOffBtn.disabled = !accessToken || !confirmSquareOffCheckbox.checked; cancelOrdersBtn.disabled = !accessToken; }
+    function setDefaultExpiryDate() { const today = new Date(); const day = today.getDay(); const index = indexSelectEl.value; let targetDay; switch(index) { case 'SENSEX': targetDay=4; break; case 'BANKEX': targetDay=5; break; case 'FINNIFTY': targetDay=2; break; case 'MIDCPNIFTY': targetDay=1; break; case 'NIFTY': targetDay=2; break; default: targetDay=4; } let daysToAdd = targetDay - day; if (daysToAdd < 0) daysToAdd += 7; const expiry = new Date(today); expiry.setDate(today.getDate() + daysToAdd); expiryDateEl.value = expiry.toISOString().split('T')[0]; }
+
+    // --- New Function: Calculate Lots based on Funds ---
+    function calculateMaxLots(checkbox) {
+        // Only calculate for BUY orders (Sell requires margin, not just LTP)
+        if (checkbox.dataset.transactionType !== 'BUY') return;
+
+        // Ensure we have funds
+        if (cachedFunds === null || typeof cachedFunds === 'undefined') {
+            logMessage('WARN', 'Cannot auto-calc lots: Funds not fetched yet. Click the wallet icon.');
+            // Visual cue to click wallet button
+            refreshFundsBtn.classList.add('btn-outline-danger');
+            setTimeout(() => refreshFundsBtn.classList.remove('btn-outline-danger'), 2000);
+            return;
+        }
+
+        const ltp = parseFloat(checkbox.dataset.ltp);
+        if (isNaN(ltp) || ltp <= 0) return;
+
+        // 1. Calculate Usable Funds (98%)
+        const usableFunds = cachedFunds * 0.98;
+
+        // 2. Calculate Cost Per Lot
+        const costPerLot = ltp * currentLotSize;
+
+        // 3. Calculate Max Lots
+        let maxLots = 0;
+        if (costPerLot > 0) {
+            maxLots = Math.floor(usableFunds / costPerLot);
+        }
+
+        // 4. Update the Input
+        quantityLotsEl.value = maxLots;
+
+        // Visual feedback
+        if (maxLots > 0) {
+            quantityLotsEl.style.border = "2px solid #198754"; // Green
+            logMessage('INFO', `Auto-Calc: Funds ₹${formatNumber(cachedFunds)} | Usable ₹${formatNumber(usableFunds)} | Cost/Lot ₹${formatNumber(costPerLot)} | Result: ${maxLots} Lots`);
+            setTimeout(() => { quantityLotsEl.style.border = ""; }, 1500);
+        } else {
+            quantityLotsEl.style.border = "2px solid #dc3545"; // Red
+            logMessage('WARN', `Auto-Calc: Insufficient funds for 1 lot. Needed approx ₹${formatNumber(costPerLot)}`);
+        }
+    }
+
+    // --- Event Listeners ---
+    refreshLivePositionsBtn.addEventListener('click', fetchAndDisplayPositions);
+    refreshFundsBtn.addEventListener('click', fetchFunds);
+    fetchChainBtn.addEventListener('click', async () => { stopChainAutoRefresh(); stopPositionsAutoRefresh(); const selected = indexSelectEl.options[indexSelectEl.selectedIndex]; currentLotSize = parseInt(selected.dataset.lotSize); setLoading(true); optionChainTableBody.innerHTML = `<tr><td colspan="17" class="text-center">Fetching chain...</td></tr>`; try { const ltp = await fetchIndexLtp(selected.dataset.instrumentKey); if (ltp) { const chain = await fetchOptionChain(selected.dataset.instrumentKey, expiryDateEl.value); if (chain) processAndDisplayOptions(chain, ltp); else optionChainTableBody.innerHTML = `<tr><td colspan="17">Failed loading chain.</td></tr>`; } else optionChainTableBody.innerHTML = `<tr><td colspan="17">Failed loading index LTP.</td></tr>`; } catch (e) { optionChainTableBody.innerHTML = `<tr><td colspan="17">Unexpected error.</td></tr>`; } finally { setLoading(false); } });
+    placeOrderBtn.addEventListener('click', () => { if (mockTradingEnabledEl.checked) placeMockOrder(); else placeRealOrder(); });
+    clearLogsBtn.addEventListener('click', clearLogs);
+    indexSelectEl.addEventListener('change', (e) => { stopChainAutoRefresh(); stopPositionsAutoRefresh(); currentLotSize = parseInt(e.target.options[e.target.selectedIndex].dataset.lotSize); setDefaultExpiryDate(); optionChainTableBody.innerHTML = '<tr><td colspan="17" class="text-center">Index changed. Fetch new chain.</td></tr>'; });
+    chainAutoRefreshCheckbox.addEventListener('change', () => { if (chainAutoRefreshCheckbox.checked) { if (optionChainTableBody.rows.length <= 1) { alert('Fetch Chain manually once first.'); chainAutoRefreshCheckbox.checked = false; return; } startChainAutoRefresh(); } else { stopChainAutoRefresh(); } });
+    positionsAutoRefreshCheckbox.addEventListener('change', () => { if (positionsAutoRefreshCheckbox.checked) { if (mockOpenPositions.length === 0) { alert('No open mock positions to auto-refresh.'); positionsAutoRefreshCheckbox.checked = false; return; } startPositionsAutoRefresh(); } else { stopPositionsAutoRefresh(); } });
+    refreshPositionsBtn.addEventListener('click', async () => { const icon = refreshPositionsBtn.querySelector('i'); icon.classList.add('spinning'); refreshPositionsBtn.disabled = true; await updateAllMockPositionsLtp(); icon.classList.remove('spinning'); refreshPositionsBtn.disabled = false; });
+    
+    // MODIFIED EVENT LISTENER FOR OPTION SELECTION
+    optionChainTableBody.addEventListener('change', e => { 
+        if (e.target.classList.contains('option-select')) {
+            togglePriceInput(e.target);
+            // Trigger auto-calculation if checked
+            if (e.target.checked) calculateMaxLots(e.target);
+        }
+    });
+
+    document.querySelectorAll('input[name="orderType"]').forEach(r => r.addEventListener('change', () => document.querySelectorAll('.option-select:checked').forEach(c => togglePriceInput(c))));
+    confirmSquareOffCheckbox.addEventListener('change', updateConfirmSquareOffState);
+    squareOffBtn.addEventListener('click', () => performFullSquareOffProcedure());
+    cancelOrdersBtn.addEventListener('click', handleCancelAllOrders);
+    mockTradingEnabledEl.addEventListener('change', () => { const isMock = mockTradingEnabledEl.checked; placeOrderBtn.textContent = isMock ? 'Place Mock Order' : 'Place Multi-Order'; placeOrderBtn.className = isMock ? 'btn btn-info btn-sm' : 'btn btn-warning btn-sm'; });
+    clearMockDataBtn.addEventListener('click', handleClearMockData);
+
+    // --- Initialization ---
+    document.addEventListener('DOMContentLoaded', () => { currentLotSize = parseInt(indexSelectEl.options[indexSelectEl.selectedIndex].dataset.lotSize); setDefaultExpiryDate(); getAccessToken(); initializeMockTrading(); logMessage('INFO', `Page loaded.`); });
+</script>
+</body>
+</html>

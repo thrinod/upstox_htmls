@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upstox v2 Auto Auth</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; max-width: 600px; margin: auto; font-size: 14px; line-height: 1.6; }
+        .container { padding: 15px; border: 1px solid #ccc; border-radius: 5px; background-color: #f9f9f9; }
+        label { display: block; margin-top: 12px; font-weight: bold; }
+        input[type="text"], input[type="password"] { width: 95%; padding: 8px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 10px 15px; margin-top: 20px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 4px; font-size: 1em; }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #aaa; cursor: not-allowed; }
+        .status-area { margin-top: 20px; padding: 15px; border: 1px solid #eee; background-color: #fff; min-height: 80px; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; font-size: 0.9em; }
+        .error { color: #dc3545; font-weight: bold; }
+        .success { color: #28a745; font-weight: bold; }
+        .info { color: #17a2b8; }
+        .warning { color: #ffc107; background-color: #333; padding: 10px; border-radius: 4px; font-weight: bold; margin-bottom: 15px; }
+        strong.security-warning { color: #dc3545; background-color: yellow; padding: 2px 4px; display: block; margin-bottom: 10px; text-align: center; font-size: 1.1em;}
+        #login-form { display: none; /* Hidden by default, shown if no token/code */ }
+        #status-section { display: none; /* Hidden by default, shown after process */ }
+        #loading-section { display: none; /* Hidden by default, shown during processing */ text-align: center; font-size: 1.2em; padding: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Upstox v2 Automated Authentication</h1>
+    <hr>
+    <div class="nav-back">
+        <a href="index.html">« Back to Main Menu</a> |
+        <a href="auth_v2.html">Go to Authentication </a> |
+        <a href="square_off_v2.html">Square Off »</a>
+    </div>
+    <!-- Section 1: Login Form (Shown if no code in URL and no token) -->
+    <div id="login-form">
+        <h2>1. Configure and Login</h2>
+        <p>Enter your Upstox API v2 details and click Login.</p>
+        <label for="apiKey">API Key (Client ID):</label>
+        <input type="text" value="e1a1871d-b622-46a8-91c7-72b94c6a3679" id="apiKey" placeholder="Your v2 API Key">
+
+        <label for="apiSecret">API Secret:</label>
+        <input type="password" value="shjwkeft88" id="apiSecret" placeholder="Your v2 API Secret (Keep Secure!)">
+
+        <label for="redirectUri">Redirect URI:</label>
+        <input type="text" id="redirectUri" placeholder="Must match this page's URL (e.g., http://localhost:8080/)" value="http://localhost:8080/auth_v2.html"> <!-- Auto-filled below -->
+
+        <button id="loginBtn">Login with Upstox</button>
+    </div>
+
+    <!-- Section 2: Loading Indicator (Shown when exchanging code) -->
+    <div id="loading-section">
+        <p>🔄 Processing authentication callback...</p>
+        <p>Exchanging authorization code for access token.</p>
+    </div>
+
+    <!-- Section 3: Status Display -->
+    <div id="status-section">
+        <h2>2. Authentication Status</h2>
+        <div class="status-area" id="statusResult">Status will appear here...</div>
+        <button id="clearTokenBtn" style="background-color: #dc3545;">Clear Stored Token & Reset</button>
+    </div>
+</div>
+
+<script>
+    // --- Configuration & Constants ---
+    const UPSTOX_API_BASE_URL = "https://api.upstox.com";
+    const API_VERSION = "2.0";
+    const LOCAL_STORAGE_TOKEN_KEY = 'upstoxAccessToken';
+    const LOCAL_STORAGE_CONFIG_KEY = 'upstoxV2TempConfig'; // For temporary storage during redirect
+
+    // --- DOM Elements ---
+    const apiKeyInput = document.getElementById('apiKey');
+    const apiSecretInput = document.getElementById('apiSecret');
+    const redirectUriInput = document.getElementById('redirectUri');
+    const loginBtn = document.getElementById('loginBtn');
+    const clearTokenBtn = document.getElementById('clearTokenBtn');
+
+    const loginFormDiv = document.getElementById('login-form');
+    const loadingDiv = document.getElementById('loading-section');
+    const statusDiv = document.getElementById('status-section');
+    const statusResultDiv = document.getElementById('statusResult');
+
+    // --- Helper Functions ---
+    function logStatus(message, type = 'info') {
+        const entry = document.createElement('div');
+        entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        entry.className = type; // Add class for styling (info, success, error)
+        // Prepend new messages
+        statusResultDiv.insertBefore(entry, statusResultDiv.firstChild);
+    }
+
+    function clearTemporaryConfig() {
+        localStorage.removeItem(LOCAL_STORAGE_CONFIG_KEY);
+        console.log("Temporary config cleared from localStorage.");
+    }
+
+    function showSection(sectionId) {
+        loginFormDiv.style.display = 'none';
+        loadingDiv.style.display = 'none';
+        statusDiv.style.display = 'none';
+
+        const sectionToShow = document.getElementById(sectionId);
+        if (sectionToShow) {
+            sectionToShow.style.display = 'block';
+        }
+    }
+
+    // --- Core Logic ---
+
+    // Function to initiate the login flow
+    function initiateLogin() {
+        const apiKey = apiKeyInput.value.trim();
+        const apiSecret = apiSecretInput.value.trim(); // SECURITY RISK
+        const redirectUri = redirectUriInput.value.trim();
+
+        if (!apiKey || !apiSecret || !redirectUri) {
+            alert('Error: API Key, API Secret, and Redirect URI are required.');
+            return;
+        }
+
+         // **Store config temporarily (including the dangerous secret!)**
+         const tempConfig = { apiKey, apiSecret, redirectUri };
+         try {
+            localStorage.setItem(LOCAL_STORAGE_CONFIG_KEY, JSON.stringify(tempConfig));
+            console.log("Temporary config stored. Redirecting to Upstox...");
+         } catch (e) {
+            alert(`Error saving config to localStorage: ${e.message}. Cannot proceed.`);
+            return;
+         }
+
+        // Construct the Upstox authorization URL
+        const authParams = new URLSearchParams({
+            client_id: apiKey,
+            redirect_uri: redirectUri,
+            response_type: 'code',
+            // state: 'optional_state_value' // Optional: Add a state for CSRF protection if needed
+        });
+        const authUrl = `${UPSTOX_API_BASE_URL}/v2/login/authorization/dialog?${authParams.toString()}`;
+
+        // Redirect the user
+        window.location.href = authUrl;
+    }
+
+    // Function to handle the redirect callback from Upstox
+    async function handleRedirectCallback(code) {
+        showSection('loading-section'); // Show loading indicator
+
+        // Retrieve the temporarily stored config
+        const storedConfigString = localStorage.getItem(LOCAL_STORAGE_CONFIG_KEY);
+        if (!storedConfigString) {
+            showSection('login-form'); // Show login form again
+            alert('Error: Authentication configuration not found. Please try logging in again.');
+            // Clean URL state in case code is still there but config is missing
+            history.replaceState(null, '', window.location.pathname);
+            return;
+        }
+
+        let config;
+        try {
+             config = JSON.parse(storedConfigString);
+        } catch (e) {
+            showSection('login-form');
+            alert(`Error parsing stored configuration: ${e.message}. Please try logging in again.`);
+            history.replaceState(null, '', window.location.pathname);
+            clearTemporaryConfig(); // Clean up potentially corrupt data
+            return;
+        }
+
+
+        const { apiKey, apiSecret, redirectUri } = config;
+
+        if (!apiKey || !apiSecret || !redirectUri || !code) {
+             showSection('login-form'); // Should not happen if config was stored, but check anyway
+             logStatus('Error: Missing required data for token exchange.', 'error');
+             clearTemporaryConfig(); // Clean up sensitive data
+             history.replaceState(null, '', window.location.pathname); // Clean URL
+             return;
+        }
+
+        logStatus('Callback received. Exchanging code for access token...', 'info');
+
+        const tokenUrl = `${UPSTOX_API_BASE_URL}/v2/login/authorization/token`;
+        const headers = {
+            'accept': 'application/json',
+            'Api-Version': API_VERSION,
+            'Content-Type': 'application/x-www-form-urlencoded'
+        };
+        const body = new URLSearchParams({
+            'client_id': apiKey,
+            'client_secret': apiSecret, // Sending the secret from client-side!
+            'redirect_uri': redirectUri,
+            'grant_type': 'authorization_code',
+            'code': code
+        });
+
+        try {
+            const response = await fetch(tokenUrl, {
+                method: 'POST',
+                headers: headers,
+                body: body.toString(),
+                mode: 'cors' // Necessary for cross-origin requests from browser
+            });
+
+            const data = await response.json().catch(() => ({ error: "Failed to parse JSON response" })); // Handle non-JSON errors
+
+            // Clear temporary config regardless of success or failure AFTER the request is made
+            clearTemporaryConfig();
+            // Clean the code from the URL immediately after trying to use it
+            history.replaceState(null, '', window.location.pathname);
+
+
+            if (response.ok && data && data.access_token) {
+                localStorage.setItem(LOCAL_STORAGE_TOKEN_KEY, data.access_token);
+                logStatus(`✅ Success! Access Token received and saved to browser storage.`, 'success');
+                logStatus(`Token: ${data.access_token.substring(0, 10)}... (truncated)`, 'info');
+                // Optionally display other received data: data.expires_in, data.token_type etc.
+                showSection('status-section'); // Show status section
+            } else {
+                localStorage.removeItem(LOCAL_STORAGE_TOKEN_KEY); // Clear any old token on failure
+                const errorMsg = data?.error_description || data?.error || `HTTP ${response.status} ${response.statusText}`;
+                logStatus(`❌ Error getting token: ${errorMsg}`, 'error');
+                 if (data) logStatus(`Full error response: ${JSON.stringify(data)}`, 'error');
+                 showSection('status-section'); // Show status section even on error
+            }
+
+        } catch (error) {
+            // Network or other fetch errors
+            clearTemporaryConfig(); // Ensure cleanup on network error too
+             history.replaceState(null, '', window.location.pathname); // Clean URL
+             localStorage.removeItem(LOCAL_STORAGE_TOKEN_KEY);
+            logStatus(`❌ Network or fetch error: ${error.message}`, 'error');
+            showSection('status-section'); // Show status section
+        }
+    }
+
+    // --- Initialization Logic on Page Load ---
+    window.addEventListener('DOMContentLoaded', () => {
+        // Pre-fill redirect URI with the current page's URL
+        // Exclude hash and query parameters for a cleaner default URI
+        const currentOrigin = window.location.origin;
+        const currentPath = window.location.pathname;
+        redirectUriInput.value = `${currentOrigin}${currentPath}`;
+
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        const existingToken = localStorage.getItem(LOCAL_STORAGE_TOKEN_KEY);
+
+        if (code) {
+            // We have been redirected back from Upstox
+            handleRedirectCallback(code);
+        } else if (existingToken) {
+            // No code in URL, but a token exists in storage
+             showSection('status-section');
+            logStatus(`🔑 Access token already found in browser storage.`, 'success');
+            logStatus(`Token: ${existingToken.substring(0, 10)}... (truncated)`, 'info');
+        } else {
+            // No code, no token - show the login form
+            showSection('login-form');
+        }
+
+        // --- Event Listeners ---
+        loginBtn.addEventListener('click', initiateLogin);
+
+        clearTokenBtn.addEventListener('click', () => {
+             if (confirm('Are you sure you want to clear the stored access token and reset?')) {
+                localStorage.removeItem(LOCAL_STORAGE_TOKEN_KEY);
+                clearTemporaryConfig(); // Also clear any leftover temp config
+                statusResultDiv.innerHTML = ''; // Clear status messages
+                logStatus('Stored token cleared.', 'info');
+                showSection('login-form'); // Show login form again
+             }
+        });
+    });
+
+</script>
+</body>
+</html>

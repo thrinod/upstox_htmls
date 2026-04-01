@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>yfinance Watchlist</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        h1, h2 {
+            color: #2c3e50;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 8px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        .input-area {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        #symbolInput {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 1em;
+        }
+        #addButton {
+            padding: 10px 15px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background-color 0.2s ease;
+        }
+        #addButton:hover {
+            background-color: #2980b9;
+        }
+        .watchlist {
+            list-style-type: none;
+            padding: 0;
+            margin-top: 20px;
+        }
+        .watchlist li {
+            background-color: #fdfdfd;
+            border: 1px solid #eee;
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap; /* Allow wrapping on small screens */
+            gap: 10px; /* Spacing between items */
+        }
+        .watchlist .info {
+            flex-grow: 1;
+            min-width: 150px; /* Ensure some minimum width */
+        }
+        .watchlist .symbol {
+            font-weight: bold;
+            font-size: 1.1em;
+            color: #2c3e50;
+             display: block; /* Put name on next line */
+             margin-bottom: 3px;
+        }
+         .watchlist .name {
+             font-size: 0.85em;
+             color: #7f8c8d;
+             display: block;
+             margin-bottom: 5px;
+         }
+        .watchlist .quote {
+             text-align: right;
+             min-width: 120px; /* Ensure quote area has width */
+        }
+        .watchlist .price {
+            font-size: 1.2em;
+            font-weight: 500;
+        }
+        .watchlist .change {
+            font-size: 0.95em;
+            margin-left: 8px;
+        }
+        .watchlist .change.positive {
+            color: #2ecc71; /* Green */
+        }
+        .watchlist .change.negative {
+            color: #e74c3c; /* Red */
+        }
+         .watchlist .change.zero {
+            color: #95a5a6; /* Gray */
+        }
+        .watchlist .volume {
+             font-size: 0.8em;
+             color: #7f8c8d;
+             margin-top: 4px;
+             display: block; /* Put on its own line */
+        }
+        .watchlist .loading, .watchlist .error {
+            font-style: italic;
+            color: #95a5a6;
+            font-size: 0.9em;
+        }
+        .watchlist .error {
+             color: #e74c3c;
+             font-weight: bold;
+        }
+        .watchlist .remove-btn {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            margin-left: 10px; /* Add some space */
+             transition: background-color 0.2s ease;
+        }
+         .watchlist .remove-btn:hover {
+             background-color: #c0392b;
+         }
+        .status-message {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .status-message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+         .status-message.info {
+            background-color: #e2e3e5;
+            color: #383d41;
+            border: 1px solid #d6d8db;
+         }
+         .placeholder {
+             text-align: center;
+             color: #7f8c8d;
+             padding: 20px;
+             border: 1px dashed #e0e0e0;
+             border-radius: 5px;
+             margin-top: 10px;
+         }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>My Stock Watchlist (yfinance)</h1>
+
+    <div class="input-area">
+        <input type="text" id="symbolInput" placeholder="Enter stock symbol (e.g., AAPL, MSFT)">
+        <button id="addButton">Add Symbol</button>
+    </div>
+    <div id="statusMessage" class="status-message" style="display: none;"></div>
+
+    <h2>Watchlist</h2>
+    <ul id="watchlist" class="watchlist">
+        <li class="placeholder" id="watchlistPlaceholder">Your watchlist is empty. Add symbols above.</li>
+        <!-- Watchlist items will be added here by JavaScript -->
+    </ul>
+</div>
+
+<script>
+    const symbolInput = document.getElementById('symbolInput');
+    const addButton = document.getElementById('addButton');
+    const watchlistUl = document.getElementById('watchlist');
+    const statusMessageDiv = document.getElementById('statusMessage');
+    const watchlistPlaceholder = document.getElementById('watchlistPlaceholder');
+
+    const WATCHLIST_KEY = 'yfinanceWatchlist';
+    let watchlistSymbols = new Set(); // Use a Set to prevent duplicates
+
+    // --- Utility Functions ---
+    function showStatus(message, isError = false) {
+        statusMessageDiv.textContent = message;
+        statusMessageDiv.className = `status-message ${isError ? 'error' : 'info'}`;
+        statusMessageDiv.style.display = 'block';
+        // Hide after a few seconds
+        setTimeout(() => {
+            statusMessageDiv.style.display = 'none';
+        }, 4000);
+    }
+
+    function formatNumber(num) {
+        // Avoid formatting null/undefined
+        return num != null ? num.toLocaleString() : 'N/A';
+    }
+
+    function updatePlaceholderVisibility() {
+         if (watchlistSymbols.size === 0) {
+             watchlistPlaceholder.style.display = 'block';
+         } else {
+             watchlistPlaceholder.style.display = 'none';
+         }
+    }
+
+    // --- Local Storage ---
+    function loadWatchlist() {
+        const saved = localStorage.getItem(WATCHLIST_KEY);
+        if (saved) {
+            try {
+                const symbolsArray = JSON.parse(saved);
+                watchlistSymbols = new Set(symbolsArray);
+            } catch (e) {
+                console.error("Failed to parse watchlist from localStorage", e);
+                watchlistSymbols = new Set(); // Reset if corrupted
+            }
+        }
+        renderFullWatchlist(); // Render after loading
+         updatePlaceholderVisibility();
+    }
+
+    function saveWatchlist() {
+        localStorage.setItem(WATCHLIST_KEY, JSON.stringify(Array.from(watchlistSymbols)));
+    }
+
+    // --- Watchlist Rendering and Data Fetching ---
+    function renderWatchlistItem(symbol) {
+        const existingLi = watchlistUl.querySelector(`li[data-symbol="${symbol.toUpperCase()}"]`);
+        if (existingLi) {
+            return; // Already exists visually
+        }
+
+        const li = document.createElement('li');
+        li.dataset.symbol = symbol.toUpperCase(); // Store symbol for easy access
+
+        li.innerHTML = `
+            <div class="info">
+                <span class="symbol">${symbol.toUpperCase()}</span>
+                <span class="name loading">Loading name...</span>
+            </div>
+            <div class="quote">
+                <span class="price loading">--.--</span>
+                <span class="change loading">--.-- (--.--%)</span>
+                <span class="volume loading">Vol: ---</span>
+            </div>
+            <button class="remove-btn" title="Remove ${symbol.toUpperCase()}">X</button>
+        `;
+
+        // Find the placeholder and insert before it, or append if no placeholder
+        const placeholder = watchlistUl.querySelector('.placeholder');
+        if (placeholder) {
+            watchlistUl.insertBefore(li, placeholder);
+        } else {
+            watchlistUl.appendChild(li);
+        }
+
+
+         updatePlaceholderVisibility(); // Hide placeholder if we just added the first item
+
+        // Add event listener to the remove button
+        li.querySelector('.remove-btn').addEventListener('click', () => {
+            removeSymbol(symbol);
+        });
+
+        // Fetch data for this item
+        fetchDataForSymbol(symbol);
+    }
+
+    async function fetchDataForSymbol(symbol) {
+         const li = watchlistUl.querySelector(`li[data-symbol="${symbol.toUpperCase()}"]`);
+         if (!li) return; // Item removed before fetch completed
+
+         // Set elements to loading state (might already be done by renderWatchlistItem)
+         const nameSpan = li.querySelector('.name');
+         const priceSpan = li.querySelector('.price');
+         const changeSpan = li.querySelector('.change');
+         const volumeSpan = li.querySelector('.volume');
+
+         nameSpan.textContent = 'Loading name...'; nameSpan.classList.add('loading');
+         priceSpan.textContent = '--.--'; priceSpan.classList.add('loading');
+         changeSpan.textContent = '--.-- (--.--%)'; changeSpan.classList.add('loading'); changeSpan.className = 'change loading';
+         volumeSpan.textContent = 'Vol: ---'; volumeSpan.classList.add('loading');
+
+
+        try {
+            // Call the Flask backend API
+            const response = await fetch(`/get_quote/${symbol}`);
+            if (!response.ok) {
+                 // Try to get error message from backend response body
+                 let errorMsg = `HTTP error ${response.status}`;
+                 try {
+                     const errorData = await response.json();
+                     errorMsg = errorData.error || errorMsg;
+                 } catch (e) { /* Ignore if body isn't JSON */ }
+                 throw new Error(errorMsg);
+            }
+            const data = await response.json();
+
+            // Check for application-level errors from the backend
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
+            // Update the UI with fetched data
+            nameSpan.textContent = data.name || symbol.toUpperCase(); // Use symbol if name missing
+            priceSpan.textContent = `${data.currency} ${formatNumber(data.price)}`;
+            volumeSpan.textContent = `Vol: ${formatNumber(data.volume)}`;
+
+            let changeClass = 'zero';
+            if (data.change > 0) changeClass = 'positive';
+            else if (data.change < 0) changeClass = 'negative';
+
+            changeSpan.textContent = `${data.change > 0 ? '+' : ''}${formatNumber(data.change)} (${data.changePercent > 0 ? '+' : ''}${formatNumber(data.changePercent)}%)`;
+            changeSpan.className = `change ${changeClass}`; // Set color class
+
+            // Remove loading classes
+             nameSpan.classList.remove('loading');
+             priceSpan.classList.remove('loading');
+             // changeSpan class is handled above
+             volumeSpan.classList.remove('loading');
+
+
+        } catch (error) {
+            console.error(`Failed to fetch data for ${symbol}:`, error);
+            // Update UI to show error for this specific item
+             nameSpan.textContent = symbol.toUpperCase(); nameSpan.classList.remove('loading');
+             priceSpan.textContent = 'Error'; priceSpan.classList.remove('loading'); priceSpan.classList.add('error');
+             changeSpan.textContent = error.message; changeSpan.className = 'change error'; // Show error message here
+             volumeSpan.textContent = ''; volumeSpan.classList.remove('loading');
+            // Optionally show a general status message too
+            // showStatus(`Error fetching ${symbol}: ${error.message}`, true);
+        }
+    }
+
+    function renderFullWatchlist() {
+        watchlistUl.innerHTML = ''; // Clear existing list items
+         // Add placeholder back initially, it will be removed if items are added
+        watchlistUl.appendChild(watchlistPlaceholder);
+        watchlistSymbols.forEach(symbol => {
+            renderWatchlistItem(symbol); // Render item structure and trigger data fetch
+        });
+        updatePlaceholderVisibility(); // Ensure placeholder is correct after rendering all
+    }
+
+    // --- Symbol Management ---
+    function addSymbol() {
+        const symbol = symbolInput.value.trim().toUpperCase();
+        if (!symbol) {
+            showStatus("Please enter a symbol.", true);
+            return;
+        }
+
+        if (watchlistSymbols.has(symbol)) {
+            showStatus(`${symbol} is already in the watchlist.`, true);
+            return;
+        }
+
+        watchlistSymbols.add(symbol);
+        saveWatchlist();
+        renderWatchlistItem(symbol); // Add visually and fetch data
+        symbolInput.value = ''; // Clear input field
+        showStatus(`${symbol} added to watchlist.`, false);
+        updatePlaceholderVisibility();
+    }
+
+    function removeSymbol(symbol) {
+        const upperSymbol = symbol.toUpperCase();
+        watchlistSymbols.delete(upperSymbol);
+        saveWatchlist();
+
+        const li = watchlistUl.querySelector(`li[data-symbol="${upperSymbol}"]`);
+        if (li) {
+            li.remove();
+        }
+        showStatus(`${upperSymbol} removed.`, false);
+         updatePlaceholderVisibility();
+    }
+
+    // --- Event Listeners ---
+    addButton.addEventListener('click', addSymbol);
+    symbolInput.addEventListener('keypress', (event) => {
+        if (event.key === 'Enter') {
+            addSymbol();
+        }
+    });
+
+    // --- Initial Load ---
+    document.addEventListener('DOMContentLoaded', () => {
+        loadWatchlist();
+         // Optional: Add auto-refresh (be mindful of potential rate limits if yfinance uses public APIs indirectly)
+         // setInterval(renderFullWatchlist, 60000); // Refresh every 60 seconds
+    });
+
+</script>
+</body>
+</html>
