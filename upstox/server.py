@@ -12,13 +12,13 @@ class CORSRequestHandler(SimpleHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
 
-
 port = 8080
 print(f"Starting server on port {port}...")
-print(f"Access the application at: http://localhost:{port}/index.html")
-print("Press Ctrl+C to stop the server")
+print(f"Access the application at: http://YOUR_PUBLIC_IP:{port}/index.html")
 
-httpd = HTTPServer(('localhost', port), CORSRequestHandler)
+# 🔥 CHANGE HERE
+httpd = HTTPServer(('0.0.0.0', port), CORSRequestHandler)
+
 try:
     httpd.serve_forever()
 except KeyboardInterrupt:
