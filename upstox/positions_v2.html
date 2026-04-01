@@ -78,16 +78,30 @@
             <h2 class="text-xl font-semibold mb-4 text-gray-800">
                 <i class="fas fa-key mr-2"></i>Authentication
             </h2>
-            <div class="flex flex-col md:flex-row gap-4">
-                <div class="flex-grow">
-                    <label for="access-token" class="block text-sm font-medium text-gray-700 mb-1">Access Token</label>
-                    <input type="password" id="access-token" placeholder="Enter your Upstox API access token" 
-                           class="w-full p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+            <div class="flex flex-col gap-4">
+                <div class="flex flex-col md:flex-row gap-4">
+                    <div class="flex-grow">
+                        <label for="access-token" class="block text-sm font-medium text-gray-700 mb-1">Access Token</label>
+                        <input type="password" id="access-token" placeholder="Enter your Upstox API access token"
+                               class="w-full p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div class="flex items-end">
+                        <button id="connect-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-md font-medium transition-colors">
+                            <i class="fas fa-plug mr-2"></i>Connect
+                        </button>
+                    </div>
                 </div>
-                <div class="flex items-end">
-                    <button id="connect-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-md font-medium transition-colors">
-                        <i class="fas fa-plug mr-2"></i>Connect
-                    </button>
+                <div class="flex flex-col md:flex-row gap-4">
+                    <div class="flex-grow">
+                        <label for="algo-name" class="block text-sm font-medium text-gray-700 mb-1">X-Algo-Name Header</label>
+                        <input type="text" id="algo-name" placeholder="Enter algorithm name (e.g., RoboTrader)"
+                               class="w-full p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div class="flex items-end">
+                        <button id="set-algo-name-btn" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-md font-medium transition-colors">
+                            <i class="fas fa-save mr-2"></i>Save Algo Name
+                        </button>
+                    </div>
                 </div>
             </div>
             <div id="auth-message" class="mt-3 text-sm hidden"></div>
@@ -269,6 +283,7 @@
     <script>
         // Global variables
         let accessToken = '';
+        let algoName = '';
         let positions = [];
         let pendingOrders = [];
         
@@ -278,7 +293,9 @@
         const authMessage = document.getElementById('auth-message');
         const mainContent = document.getElementById('main-content');
         const statusIndicator = document.getElementById('status-indicator');
-        
+        const algoNameInput = document.getElementById('algo-name');
+        const setAlgoNameBtn = document.getElementById('set-algo-name-btn');
+
         // Tab navigation
         const tabButtons = document.querySelectorAll('.tab-btn');
         const tabContents = document.querySelectorAll('.tab-content');
@@ -338,6 +355,7 @@
             
             // Set up button event listeners
             connectBtn.addEventListener('click', connectToUpstox);
+            setAlgoNameBtn.addEventListener('click', saveAlgoName);
             refreshPositionsBtn.addEventListener('click', fetchPositions);
             refreshOrdersBtn.addEventListener('click', fetchPendingOrders);
             cancelAllOrdersBtn.addEventListener('click', cancelAllPendingOrders);
@@ -349,6 +367,15 @@
             if (savedToken) {
                 accessTokenInput.value = savedToken;
                 connectToUpstox();
+            }
+
+            // Check if we have an algo name in cookie
+            const savedAlgoName = getAlgoNameCookie();
+            if (savedAlgoName && savedAlgoName !== DEFAULT_ALGO_NAME) {
+                algoNameInput.value = savedAlgoName;
+                algoName = savedAlgoName;
+            } else {
+                algoName = DEFAULT_ALGO_NAME;
             }
         });
         
@@ -409,10 +436,74 @@
             } else if (type === 'success') {
                 authMessage.classList.add('text-green-600');
             }
-            
-            authMessage.classList.remove('hidden');
+        }
+
+        // Save algo name to cookie
+        function saveAlgoName() {
+            const algoNameValue = algoNameInput.value.trim();
+
+            if (!algoNameValue) {
+                showAuthMessage('Please enter an algorithm name', 'error');
+                return;
+            }
+
+            setAlgoNameCookie(algoNameValue);
+
+            // Visual feedback
+            const originalText = setAlgoNameBtn.innerHTML;
+            setAlgoNameBtn.innerHTML = '<i class="fas fa-check mr-2"></i>Algo Name Saved!';
+            setAlgoNameBtn.disabled = true;
+
+            setTimeout(() => {
+                setAlgoNameBtn.innerHTML = originalText;
+                setAlgoNameBtn.disabled = false;
+            }, 2000);
+
+            showAuthMessage(`Algo name saved: ${algoNameValue}`, 'success');
+        }
+
+        // Helper function to get headers with algo name
+        function getRequestHeaders() {
+            const headers = {
+                'Accept': 'application/json',
+                'Authorization': `Bearer ${accessToken}`
+            };
+
+            if (algoName) {
+                headers['X-Algo-Name'] = algoName;
+            }
+
+            return headers;
         }
         
+        // --- Cookie Management for Algo Name ---
+        const ALGO_NAME_COOKIE_KEY = 'upstoxAlgoName';
+        const DEFAULT_ALGO_NAME = 'RoboTrader';
+
+        function setAlgoNameCookie(value) {
+            const expirationDays = 365;
+            const date = new Date();
+            date.setTime(date.getTime() + (expirationDays * 24 * 60 * 60 * 1000));
+            const expires = "expires=" + date.toUTCString();
+            document.cookie = ALGO_NAME_COOKIE_KEY + "=" + encodeURIComponent(value) + ";" + expires + ";path=/";
+            algoName = value;
+            console.log(`Algo Name updated to: ${value}`);
+        }
+
+        function getAlgoNameCookie() {
+            const nameEQ = ALGO_NAME_COOKIE_KEY + "=";
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                let c = cookies[i].trim();
+                if (c.indexOf(nameEQ) === 0) {
+                    return decodeURIComponent(c.substring(nameEQ.length));
+                }
+            }
+            return DEFAULT_ALGO_NAME;
+        }
+
+        // Helper function to get headers with algo name
+
         // Fetch positions from Upstox
         function fetchPositions() {
             positionsLoading.classList.remove('hidden');
@@ -420,10 +511,7 @@
             positionsError.classList.add('hidden');
             
             axios.get('https://api.upstox.com/v2/portfolio/short-term-positions', {
-                headers: {
-                    'Accept': 'application/json',
-                    'Authorization': `Bearer ${accessToken}`
-                }
+                headers: getRequestHeaders()
             })
             .then(response => {
                 positions = response.data.data || [];
@@ -514,10 +602,7 @@
                 params: {
                     'filter': 'pending'
                 },
-                headers: {
-                    'Accept': 'application/json',
-                    'Authorization': `Bearer ${accessToken}`
-                }
+                headers: getRequestHeaders()
             })
             .then(response => {
                 pendingOrders = response.data.data || [];
@@ -596,10 +681,7 @@
             }
             
             axios.delete(`https://api.upstox.com/v2/order/cancel/${orderId}`, {
-                headers: {
-                    'Accept': 'application/json',
-                    'Authorization': `Bearer ${accessToken}`
-                }
+                headers: getRequestHeaders()
             })
             .then(() => {
                 // Remove the order from the list
@@ -636,10 +718,7 @@
             // Create an array of cancel promises
             const cancelPromises = pendingOrders.map(order => {
                 return axios.delete(`https://api.upstox.com/v2/order/cancel/${order.order_id}`, {
-                    headers: {
-                        'Accept': 'application/json',
-                        'Authorization': `Bearer ${accessToken}`
-                    }
+                    headers: getRequestHeaders()
                 });
             });
             
@@ -780,10 +859,7 @@
                     params: {
                         'filter': 'pending'
                     },
-                    headers: {
-                        'Accept': 'application/json',
-                        'Authorization': `Bearer ${accessToken}`
-                    }
+                    headers: getRequestHeaders()
                 })
                 .then(response => {
                     const symbolOrders = response.data.data?.filter(order => 
@@ -797,10 +873,7 @@
                     
                     const cancelPromises = symbolOrders.map(order => {
                         return axios.delete(`https://api.upstox.com/v2/order/cancel/${order.order_id}`, {
-                            headers: {
-                                'Accept': 'application/json',
-                                'Authorization': `Bearer ${accessToken}`
-                            }
+                            headers: getRequestHeaders()
                         });
                     });
                     
@@ -827,10 +900,7 @@
                     };
                     
                     return axios.post('https://api.upstox.com/v2/order/place', orderData, {
-                        headers: {
-                            'Accept': 'application/json',
-                            'Authorization': `Bearer ${accessToken}`
-                        }
+                        headers: getRequestHeaders()
                     });
                 })
                 .then(() => {

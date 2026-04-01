@@ -65,6 +65,16 @@
     <div class="card mb-3">
         <div class="card-body">
             <div class="row g-2 align-items-end">
+                <div class="col-md-3"><label for="algoNameInput" class="form-label form-label-sm">X-Algo-Name Header:</label><input type="text" id="algoNameInput" class="form-control form-control-sm" placeholder="Enter algo name"></div>
+                <div class="col-md-2"><button id="setAlgoNameBtn" class="btn btn-info btn-sm w-100">Set Algo Name</button></div>
+                <div class="col-md-7"><small class="text-muted">Configure the algorithm name to be sent with all order requests. This value is stored in a cookie and persists across sessions.</small></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-2 align-items-end">
                 <div class="col-md-3"><label for="indexSelect" class="form-label form-label-sm">Index:</label><select id="indexSelect" class="form-select form-select-sm"><option value="NIFTY" data-instrument-key="NSE_INDEX|Nifty 50" data-lot-size="75">NIFTY 50</option><option value="BANKNIFTY" data-instrument-key="NSE_INDEX|Nifty Bank" data-lot-size="30">BANKNIFTY</option><option value="FINNIFTY" data-instrument-key="NSE_INDEX|Nifty Fin Service" data-lot-size="65">FINNIFTY</option><option value="MIDCPNIFTY" data-instrument-key="NSE_INDEX|Nifty Midcap Select" data-lot-size="140">MIDCP NIFTY</option><option value="SENSEX" data-instrument-key="BSE_INDEX|SENSEX" data-lot-size="20">SENSEX</option><option value="BANKEX" data-instrument-key="BSE_INDEX|BANKEX" data-lot-size="30">BANKEX</option></select></div>
                 <div class="col-md-3"><label for="expiryDate" class="form-label form-label-sm">Expiry Date:</label><input type="date" id="expiryDate" class="form-control form-control-sm"></div>
                 <div class="col-md-2"><label for="quantityLots" class="form-label form-label-sm">Lots:</label><input type="number" id="quantityLots" class="form-control form-control-sm" value="1" min="1" step="1"></div>
@@ -266,13 +276,16 @@
     const NUM_STRIKES_SIDE = 7;
     const MULTI_ORDER_ENDPOINT = '/order/multi/place';
     const REFRESH_INTERVAL_MS = 10000;
+    const ALGO_NAME_COOKIE_KEY = 'upstoxAlgoName';
+    const DEFAULT_ALGO_NAME = 'RoboTrader';
     let accessToken = null, currentLotSize = 25;
     let chainRefreshIntervalId = null, positionsRefreshIntervalId = null;
     let mockOpenPositions = [], mockClosedPositions = [];
     let currentLivePositions = []; // Store raw API data
     let selectedPositionForManage = null; // Currently selected position object for Modal
     let positionModal = null; // Bootstrap modal instance
-    
+    let algoName = DEFAULT_ALGO_NAME; // Current algo name for X-Algo-Name header
+
     // Memory storage for Funds
     let cachedFunds = null;
 
@@ -294,6 +307,10 @@
     const fundsDisplayEl = document.getElementById('fundsDisplay');
     const refreshFundsBtn = document.getElementById('refreshFundsBtn');
 
+    // Algo Name Configuration
+    const algoNameInput = document.getElementById('algoNameInput');
+    const setAlgoNameBtn = document.getElementById('setAlgoNameBtn');
+
     // Modal Elements
     const manageModalTitle = document.getElementById('manageModalTitle');
     const modalAvgPrice = document.getElementById('modalAvgPrice');
@@ -311,7 +328,35 @@
     // --- Logging & API Helper ---
     function logMessage(type, ...messages) { const timestamp = new Date().toLocaleTimeString(); const logEntry = document.createElement('div'); const processedMessages = messages.map(m => typeof m === 'object' ? JSON.stringify(m) : m); logEntry.innerHTML = `<strong>[${timestamp} ${type}]</strong>: ${processedMessages.join(' ')}`; if (type === 'ERROR') { logEntry.style.color = 'red'; logEntry.style.fontWeight = 'bold'; } else if (type === 'REQUEST') { logEntry.style.color = 'blue'; } else if (type === 'RESPONSE') { logEntry.style.color = 'green'; } else if (type === 'WARN') { logEntry.style.color = '#fd7e14'; logEntry.style.fontWeight = 'bold';} else if (type === 'MOCK') { logEntry.style.color = '#6f42c1'; logEntry.style.fontWeight = 'bold'; } logsEl.appendChild(logEntry); logsEl.scrollTop = logsEl.scrollHeight;}
     function clearLogs() { logsEl.innerHTML = ''; logMessage('INFO', 'Logs cleared.'); }
-    async function makeApiCall(endpoint, method = 'GET', body = null) { if (!accessToken) throw new Error('Access Token missing.'); const url = `${API_BASE_URL}${endpoint}`; const headers = { 'Accept': 'application/json', 'Authorization': `Bearer ${accessToken}`}; if (body) headers['Content-Type'] = 'application/json'; const requestOptions = { method, headers, body: body ? JSON.stringify(body) : null }; logMessage('REQUEST', `${method} ${url}`, body ? `Body: ${JSON.stringify(body, null, 2)}` : ''); try { const response = await fetch(url, requestOptions); const data = await response.json().catch(() => response.text()); logMessage('RESPONSE', `${response.status}`, typeof data === 'object' ? JSON.stringify(data, null, 2) : data); if (!response.ok) { const errorMsg = data?.errors?.[0]?.message || (typeof data === 'string' ? data : JSON.stringify(data)); throw new Error(`API Error (${response.status}): ${errorMsg}`); } return data; } catch (error) { logMessage('ERROR', `API Call Failed: ${method} ${url}: ${error.message}`); throw error; } }
+
+    // --- Cookie Management for Algo Name ---
+    function setAlgoNameCookie(value) {
+        const expirationDays = 365;
+        const date = new Date();
+        date.setTime(date.getTime() + (expirationDays * 24 * 60 * 60 * 1000));
+        const expires = "expires=" + date.toUTCString();
+        document.cookie = ALGO_NAME_COOKIE_KEY + "=" + encodeURIComponent(value) + ";" + expires + ";path=/";
+        algoName = value;
+        logMessage('INFO', `Algo Name updated to: ${value}`);
+    }
+
+    function getAlgoNameCookie() {
+        const nameEQ = ALGO_NAME_COOKIE_KEY + "=";
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            let c = cookies[i].trim();
+            if (c.indexOf(nameEQ) === 0) {
+                return decodeURIComponent(c.substring(nameEQ.length));
+            }
+        }
+        return DEFAULT_ALGO_NAME;
+    }
+
+    // Initialize algo name from cookie on page load
+    algoName = getAlgoNameCookie();
+
+    async function makeApiCall(endpoint, method = 'GET', body = null) { if (!accessToken) throw new Error('Access Token missing.'); const url = `${API_BASE_URL}${endpoint}`; const headers = { 'Accept': 'application/json', 'Authorization': `Bearer ${accessToken}`, 'X-Algo-Name': algoName}; if (body) headers['Content-Type'] = 'application/json'; const requestOptions = { method, headers, body: body ? JSON.stringify(body) : null }; logMessage('REQUEST', `${method} ${url}`, body ? `Body: ${JSON.stringify(body, null, 2)}` : ''); try { const response = await fetch(url, requestOptions); const data = await response.json().catch(() => response.text()); logMessage('RESPONSE', `${response.status}`, typeof data === 'object' ? JSON.stringify(data, null, 2) : data); if (!response.ok) { const errorMsg = data?.errors?.[0]?.message || (typeof data === 'string' ? data : JSON.stringify(data)); throw new Error(`API Error (${response.status}): ${errorMsg}`); } return data; } catch (error) { logMessage('ERROR', `API Call Failed: ${method} ${url}: ${error.message}`); throw error; } }
+
 
     // --- Funds Logic ---
     async function fetchFunds() {
@@ -642,6 +687,18 @@
     fetchChainBtn.addEventListener('click', async () => { stopChainAutoRefresh(); stopPositionsAutoRefresh(); const selected = indexSelectEl.options[indexSelectEl.selectedIndex]; currentLotSize = parseInt(selected.dataset.lotSize); setLoading(true); optionChainTableBody.innerHTML = `<tr><td colspan="17" class="text-center">Fetching chain...</td></tr>`; try { const ltp = await fetchIndexLtp(selected.dataset.instrumentKey); if (ltp) { const chain = await fetchOptionChain(selected.dataset.instrumentKey, expiryDateEl.value); if (chain) processAndDisplayOptions(chain, ltp); else optionChainTableBody.innerHTML = `<tr><td colspan="17">Failed loading chain.</td></tr>`; } else optionChainTableBody.innerHTML = `<tr><td colspan="17">Failed loading index LTP.</td></tr>`; } catch (e) { optionChainTableBody.innerHTML = `<tr><td colspan="17">Unexpected error.</td></tr>`; } finally { setLoading(false); } });
     placeOrderBtn.addEventListener('click', () => { if (mockTradingEnabledEl.checked) placeMockOrder(); else placeRealOrder(); });
     clearLogsBtn.addEventListener('click', clearLogs);
+    setAlgoNameBtn.addEventListener('click', () => {
+        const value = algoNameInput.value.trim();
+        if (!value) {
+            alert('Enter a valid algo name.');
+            return;
+        }
+        setAlgoNameCookie(value);
+        algoNameInput.value = '';
+        setAlgoNameBtn.textContent = 'Algo Name Set!';
+        setTimeout(() => { setAlgoNameBtn.textContent = 'Set Algo Name'; }, 2000);
+    });
+    algoNameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') setAlgoNameBtn.click(); });
     indexSelectEl.addEventListener('change', (e) => { stopChainAutoRefresh(); stopPositionsAutoRefresh(); currentLotSize = parseInt(e.target.options[e.target.selectedIndex].dataset.lotSize); setDefaultExpiryDate(); optionChainTableBody.innerHTML = '<tr><td colspan="17" class="text-center">Index changed. Fetch new chain.</td></tr>'; });
     chainAutoRefreshCheckbox.addEventListener('change', () => { if (chainAutoRefreshCheckbox.checked) { if (optionChainTableBody.rows.length <= 1) { alert('Fetch Chain manually once first.'); chainAutoRefreshCheckbox.checked = false; return; } startChainAutoRefresh(); } else { stopChainAutoRefresh(); } });
     positionsAutoRefreshCheckbox.addEventListener('change', () => { if (positionsAutoRefreshCheckbox.checked) { if (mockOpenPositions.length === 0) { alert('No open mock positions to auto-refresh.'); positionsAutoRefreshCheckbox.checked = false; return; } startPositionsAutoRefresh(); } else { stopPositionsAutoRefresh(); } });
